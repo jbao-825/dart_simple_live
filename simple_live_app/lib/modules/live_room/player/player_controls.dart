@@ -536,6 +536,7 @@ Widget _buildFullBottomBar(
         ),
         child: Row(
           children: [
+            _buildPlaybackButton(controller),
             IconButton(
               onPressed: controller.refreshRoom,
               icon: const Icon(
@@ -664,6 +665,7 @@ Widget _buildNormalBottomBar(
         ),
         child: Row(
           children: [
+            _buildPlaybackButton(controller),
             IconButton(
               onPressed: controller.refreshRoom,
               icon: const Icon(
@@ -791,6 +793,19 @@ Widget _buildSideLockButton(
       child: buildLockButton(controller),
     );
   });
+}
+
+Widget _buildPlaybackButton(LiveRoomController controller) {
+  final playing = controller.playingState.value;
+  return IconButton(
+    tooltip: playing ? "暂停" : "播放",
+    onPressed: controller.togglePlayback,
+    icon: Icon(
+      playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
+      color: Colors.white,
+      size: 26,
+    ),
+  );
 }
 
 Widget _buildGestureTip(LiveRoomController controller) {

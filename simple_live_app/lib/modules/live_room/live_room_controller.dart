@@ -1235,6 +1235,7 @@ class LiveRoomController extends PlayerController
   // 页面刷新与重载逻辑
 
   void refreshRoom() {
+    resetUserPausedState();
     //messages.clear();
     _clearDanmuDedupeState();
     _clearSuperChatState();
@@ -1708,6 +1709,7 @@ class LiveRoomController extends PlayerController
   }
 
   Future<void> _openPlaylist(int loadGeneration) async {
+    resetUserPausedState();
     final mediaGeneration = ++_playbackMediaGeneration;
     currentLineInfo.value = "线路${currentLineIndex + 1}";
     errorMsg.value = "";
@@ -3170,6 +3172,7 @@ ${errorStackTrace ?? ""}''');
     final loadGeneration = _loadGeneration;
     if (since == null ||
         previousPosition == null ||
+        userPausedState.value ||
         !liveStatus.value ||
         currentLineIndex < 0 ||
         playUrls.isEmpty) {
