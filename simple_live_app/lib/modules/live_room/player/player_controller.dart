@@ -114,6 +114,8 @@ mixin PlayerStateMixin on PlayerMixin {
 
   RxBool mutedState = false.obs;
   double _volumeBeforeMute = 100.0;
+  bool _highVolumeGestureUnlockArmed = false;
+  bool _highVolumeGestureUnlocked = false;
 
   void onPlayerWindowModeExited() {}
 
@@ -781,7 +783,7 @@ mixin PlayerSystemMixin on PlayerMixin, PlayerStateMixin, PlayerDanmakuMixin {
   Future<void> toggleMute() async {
     if (mutedState.value) {
       final restoreVolume =
-          _volumeBeforeMute <= 0 ? 100.0 : _volumeBeforeMute.clamp(0.0, 100.0);
+          _volumeBeforeMute <= 0 ? 100.0 : _volumeBeforeMute.clamp(0.0, 150.0);
       await setSessionPlayerVolume(restoreVolume);
       return;
     }
@@ -796,7 +798,7 @@ mixin PlayerSystemMixin on PlayerMixin, PlayerStateMixin, PlayerDanmakuMixin {
     double volume, {
     bool persist = false,
   }) async {
-    final requestedValue = volume.clamp(0.0, 100.0).toDouble();
+    final requestedValue = volume.clamp(0.0, 150.0).toDouble();
     final mobile = Platform.isAndroid || Platform.isIOS;
     final value = requestedValue <= 0 ? 0.0 : (mobile ? 100.0 : requestedValue);
     if (value <= 0) {
@@ -808,7 +810,8 @@ mixin PlayerSystemMixin on PlayerMixin, PlayerStateMixin, PlayerDanmakuMixin {
       await player.setVolume(value);
     }
     if (persist && !mobile) {
-      AppSettingsController.instance.setPlayerVolume(requestedValue);
+      AppSettingsController.instance
+          .setPlayerVolume(requestedValue.clamp(0.0, 100.0));
     }
   }
 
@@ -1328,6 +1331,10 @@ mixin PlayerGestureControlMixin
       },
     );
     lastVolume = -1;
+    if (_highVolumeGestureUnlockArmed) {
+      _highVolumeGestureUnlocked = true;
+      _highVolumeGestureUnlockArmed = false;
+    }
 
     verticalDragging = true;
     _verticalDragReady = false;
@@ -1338,7 +1345,7 @@ mixin PlayerGestureControlMixin
     if (Platform.isWindows || Platform.isLinux) {
       final currentPlayerVolume = player.state.volume;
       if (currentPlayerVolume > 0) {
-        initialVolume = currentPlayerVolume.clamp(0.0, 100.0) / 100;
+        initialVolume = currentPlayerVolume.clamp(0.0, 150.0) / 100;
       } else {
         initialVolume = AppSettingsController.instance.playerVolume.value
                 .clamp(0.0, 100.0) /
@@ -1409,6 +1416,7 @@ mixin PlayerGestureControlMixin
   int lastVolume = -1; // it's ok to be -1
 
   void setGestureVolume(double dy) {
+    final supportsHighVolume = Platform.isWindows || Platform.isLinux;
     double value = 0.0;
     double seek;
     if (dy > verStartPosition) {
@@ -1421,11 +1429,19 @@ mixin PlayerGestureControlMixin
     } else {
       value = ((dy - verStartPosition) / _verticalDragExtent);
       seek = value.abs() + _currentVolume;
-      if (seek > 1) {
+      if (seek > 1 && supportsHighVolume && !_highVolumeGestureUnlocked) {
         seek = 1;
+        showGestureTipText("音量已达 100%，再次向上滑动可提升至 150%");
+        _highVolumeGestureUnlockArmed = true;
+        lastVolume = 100;
+        throttle?.invoke(() async => await _realSetVolume(100));
+        return;
       }
     }
-    int volume = _convertVolume((seek * 100).round());
+    final maxVolume = supportsHighVolume && _highVolumeGestureUnlocked ? 150 : 100;
+    final int volume = _convertVolume((seek * 100).round())
+        .clamp(0, maxVolume)
+        .toInt();
     if (volume == lastVolume) {
       return;
     }
@@ -1443,7 +1459,7 @@ mixin PlayerGestureControlMixin
   Future<void> _realSetVolume(int volume) async {
     Log.logPrint(volume);
     if (Platform.isWindows || Platform.isLinux) {
-      await setSessionPlayerVolume(volume.toDouble(), persist: true);
+      await setSessionPlayerVolume(volume.toDouble(), persist: volume <= 100);
       return;
     }
     // 手势只调系统音量，播放器内部音量由独立设置控制。

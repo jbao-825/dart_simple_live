@@ -229,10 +229,12 @@ class AppSettingsController extends GetxController {
       0,
     );
 
-    playerVolume.value = LocalStorageService.instance.getValue(
+    playerVolume.value = (LocalStorageService.instance.getValue(
       LocalStorageService.kPlayerVolume,
       100.0,
-    );
+    ) as num)
+        .clamp(0.0, 100.0)
+        .toDouble();
     playerGestureControlEnable.value = LocalStorageService.instance.getValue(
       LocalStorageService.kPlayerGestureControlEnable,
       true,
@@ -2103,10 +2105,11 @@ class AppSettingsController extends GetxController {
 
   Rx<double> playerVolume = 100.0.obs;
   void setPlayerVolume(double value) {
-    playerVolume.value = value;
+    final safeValue = value.clamp(0.0, 100.0).toDouble();
+    playerVolume.value = safeValue;
     LocalStorageService.instance.setValue(
       LocalStorageService.kPlayerVolume,
-      value,
+      safeValue,
     );
   }
 
