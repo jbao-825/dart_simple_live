@@ -123,6 +123,10 @@ class AppSettingsController extends GetxController {
       LocalStorageService.kChatBubbleStyle,
       false,
     );
+    desktopLiveRoomSidePanelRatio.value = LocalStorageService.instance.getValue(
+      LocalStorageService.kDesktopLiveRoomSidePanelRatio,
+      0.25,
+    );
 
     qualityLevel.value = LocalStorageService.instance
         .getValue(LocalStorageService.kQualityLevel, 1);
@@ -600,6 +604,16 @@ class AppSettingsController extends GetxController {
     chatBubbleStyle.value = e;
     LocalStorageService.instance
         .setValue(LocalStorageService.kChatBubbleStyle, e);
+  }
+
+  var desktopLiveRoomSidePanelRatio = 0.25.obs;
+  void setDesktopLiveRoomSidePanelRatio(double value) {
+    final normalized = value.clamp(0.05, 0.7).toDouble();
+    desktopLiveRoomSidePanelRatio.value = normalized;
+    LocalStorageService.instance.setValue(
+      LocalStorageService.kDesktopLiveRoomSidePanelRatio,
+      normalized,
+    );
   }
 
   var danmuSize = 16.0.obs;

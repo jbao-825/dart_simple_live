@@ -59,6 +59,8 @@ class LiveRoomController extends PlayerController
     rxSite = pSite.obs;
     rxRoomId = pRoomId.obs;
     desktopSidePanelCollapsed.value = initialDesktopSidePanelCollapsed;
+    desktopSidePanelRatio.value =
+        AppSettingsController.instance.desktopLiveRoomSidePanelRatio.value;
     liveDanmaku = site.liveSite.getDanmaku();
     // 抖音直播间默认按竖屏处理。
     if (site.id == "douyin") {
@@ -107,6 +109,9 @@ class LiveRoomController extends PlayerController
   final liveRoomFollowFilterMode = 0.obs;
   final liveRoomSelectedPanelKey = "chat".obs;
   final desktopSidePanelCollapsed = false.obs;
+  final desktopSidePanelRatio = 0.25.obs;
+  double? _desktopSidePanelDragStartWidth;
+  double? _desktopSidePanelDragStartX;
   RxSet<String> tempMutedUsers = <String>{}.obs;
   bool get supportsContributionRank => const {
         Constant.kBiliBili,
@@ -116,6 +121,35 @@ class LiveRoomController extends PlayerController
 
   void toggleDesktopSidePanel() {
     desktopSidePanelCollapsed.value = !desktopSidePanelCollapsed.value;
+  }
+
+  void beginDesktopSidePanelResize({
+    required double width,
+    required double globalX,
+  }) {
+    _desktopSidePanelDragStartWidth = width;
+    _desktopSidePanelDragStartX = globalX;
+  }
+
+  void updateDesktopSidePanelResize({
+    required double totalWidth,
+    required double globalX,
+  }) {
+    final startWidth = _desktopSidePanelDragStartWidth;
+    final startX = _desktopSidePanelDragStartX;
+    if (startWidth == null || startX == null || totalWidth <= 0) {
+      return;
+    }
+    final nextWidth = startWidth - (globalX - startX);
+    desktopSidePanelRatio.value =
+        (nextWidth / totalWidth).clamp(0.05, 0.7).toDouble();
+  }
+
+  void endDesktopSidePanelResize() {
+    _desktopSidePanelDragStartWidth = null;
+    _desktopSidePanelDragStartX = null;
+    AppSettingsController.instance
+        .setDesktopLiveRoomSidePanelRatio(desktopSidePanelRatio.value);
   }
 
   /// 聊天列表滚动控制器
@@ -1235,6 +1269,7 @@ class LiveRoomController extends PlayerController
   // 页面刷新与重载逻辑
 
   void refreshRoom() {
+    resetUserPausedState();
     //messages.clear();
     _clearDanmuDedupeState();
     _clearSuperChatState();
@@ -1708,6 +1743,7 @@ class LiveRoomController extends PlayerController
   }
 
   Future<void> _openPlaylist(int loadGeneration) async {
+    resetUserPausedState();
     final mediaGeneration = ++_playbackMediaGeneration;
     currentLineInfo.value = "线路${currentLineIndex + 1}";
     errorMsg.value = "";
@@ -3170,6 +3206,7 @@ ${errorStackTrace ?? ""}''');
     final loadGeneration = _loadGeneration;
     if (since == null ||
         previousPosition == null ||
+        userPausedState.value ||
         !liveStatus.value ||
         currentLineIndex < 0 ||
         playUrls.isEmpty) {

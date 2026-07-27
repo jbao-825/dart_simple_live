@@ -31,6 +31,10 @@ import 'package:url_launcher/url_launcher_string.dart';
 class LiveRoomPage extends GetView<LiveRoomController> {
   static const double _desktopSidePanelWidth = 300.0;
   static const double _desktopSidePanelCollapsedWidth = 48.0;
+  static const double _desktopSidePanelMinWidth = 240.0;
+  static const double _desktopSidePanelMaxWidth = 720.0;
+  static const double _desktopPlayerMinWidth = 320.0;
+  static const double _desktopResizeHandleWidth = 8.0;
 
   const LiveRoomPage({Key? key}) : super(key: key);
 
@@ -437,16 +441,35 @@ class LiveRoomPage extends GetView<LiveRoomController> {
     return Obx(() {
       final collapsed =
           _isDesktop && controller.desktopSidePanelCollapsed.value;
+      final sidePanelRatio = controller.desktopSidePanelRatio.value;
       return Column(
         children: [
           Expanded(
-            child: Row(
-              children: [
-                Expanded(
-                  child: buildMediaPlayer(),
-                ),
-                if (!collapsed) _buildExpandedSidePanel(context),
-              ],
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final sidePanelWidth = _desktopSidePanelWidthFor(
+                  constraints.maxWidth,
+                  sidePanelRatio,
+                );
+                return Row(
+                  children: [
+                    Expanded(
+                      child: buildMediaPlayer(),
+                    ),
+                    if (!collapsed && _isDesktop)
+                      _buildDesktopResizeHandle(
+                        context,
+                        totalWidth: constraints.maxWidth,
+                        sidePanelWidth: sidePanelWidth,
+                      ),
+                    if (!collapsed)
+                      _buildExpandedSidePanel(
+                        context,
+                        width: sidePanelWidth,
+                      ),
+                  ],
+                );
+              },
             ),
           ),
           if (!collapsed)
@@ -525,10 +548,58 @@ class LiveRoomPage extends GetView<LiveRoomController> {
     });
   }
 
-  Widget _buildExpandedSidePanel(BuildContext context) {
+  double _desktopSidePanelWidthFor(
+    double totalWidth,
+    double sidePanelRatio,
+  ) {
+    if (!_isDesktop) {
+      return _desktopSidePanelWidth;
+    }
+    final availableWidth =
+        totalWidth - _desktopResizeHandleWidth - _desktopPlayerMinWidth;
+    if (availableWidth <= 0) {
+      return 0;
+    }
+    final maxWidth = availableWidth.clamp(
+      0.0,
+      _desktopSidePanelMaxWidth,
+    );
+    final minWidth = maxWidth < _desktopSidePanelMinWidth
+        ? maxWidth
+        : _desktopSidePanelMinWidth;
+    return (totalWidth * sidePanelRatio).clamp(minWidth, maxWidth).toDouble();
+  }
+
+  Widget _buildDesktopResizeHandle(
+    BuildContext context, {
+    required double totalWidth,
+    required double sidePanelWidth,
+  }) {
+    return _DesktopResizeHandle(
+      width: _desktopResizeHandleWidth,
+      onDragStart: (details) {
+        controller.beginDesktopSidePanelResize(
+          width: sidePanelWidth,
+          globalX: details.globalPosition.dx,
+        );
+      },
+      onDragUpdate: (details) {
+        controller.updateDesktopSidePanelResize(
+          totalWidth: totalWidth,
+          globalX: details.globalPosition.dx,
+        );
+      },
+      onDragEnd: controller.endDesktopSidePanelResize,
+    );
+  }
+
+  Widget _buildExpandedSidePanel(
+    BuildContext context, {
+    required double width,
+  }) {
     final showCollapseAction = _isDesktop;
     return SizedBox(
-      width: _desktopSidePanelWidth,
+      width: width,
       child: Column(
         children: [
           if (showCollapseAction)
@@ -1928,6 +1999,88 @@ class _SubtitleModelTile extends StatelessWidget {
       onTap: () {
         launchUrlString(url, mode: LaunchMode.externalApplication);
       },
+    );
+  }
+}
+
+class _DesktopResizeHandle extends StatefulWidget {
+  final double width;
+  final GestureDragStartCallback onDragStart;
+  final GestureDragUpdateCallback onDragUpdate;
+  final VoidCallback onDragEnd;
+
+  const _DesktopResizeHandle({
+    required this.width,
+    required this.onDragStart,
+    required this.onDragUpdate,
+    required this.onDragEnd,
+  });
+
+  @override
+  State<_DesktopResizeHandle> createState() => _DesktopResizeHandleState();
+}
+
+class _DesktopResizeHandleState extends State<_DesktopResizeHandle> {
+  bool _hovered = false;
+  bool _pressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final handleColor = _pressed
+        ? colorScheme.primary
+        : _hovered
+            ? colorScheme.primary.withAlpha(180)
+            : colorScheme.onSurfaceVariant.withAlpha(90);
+    final backgroundColor = _pressed
+        ? colorScheme.primary.withAlpha(170)
+        : _hovered
+            ? colorScheme.primary.withAlpha(80)
+            : Colors.transparent;
+
+    return MouseRegion(
+      cursor: SystemMouseCursors.resizeLeftRight,
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onHorizontalDragDown: (_) {
+          setState(() => _pressed = true);
+        },
+        onHorizontalDragStart: (details) {
+          widget.onDragStart(details);
+        },
+        onHorizontalDragUpdate: widget.onDragUpdate,
+        onHorizontalDragEnd: (_) {
+          setState(() => _pressed = false);
+          widget.onDragEnd();
+        },
+        onHorizontalDragCancel: () {
+          setState(() => _pressed = false);
+          widget.onDragEnd();
+        },
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 160),
+          curve: Curves.easeOut,
+          width: widget.width,
+          color: backgroundColor,
+          alignment: Alignment.center,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 120),
+            curve: Curves.easeOut,
+            width: _pressed ? 4 : 3,
+            height: _pressed
+                ? 44
+                : _hovered
+                    ? 38
+                    : 32,
+            decoration: BoxDecoration(
+              color: handleColor,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
