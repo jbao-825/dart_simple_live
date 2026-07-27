@@ -113,6 +113,8 @@ mixin PlayerStateMixin on PlayerMixin {
   RxBool showDanmakuState = false.obs;
 
   RxBool mutedState = false.obs;
+  RxBool playingState = false.obs;
+  RxBool userPausedState = false.obs;
   double _volumeBeforeMute = 100.0;
   bool _highVolumeGestureUnlockArmed = false;
   bool _highVolumeGestureUnlocked = false;
@@ -1438,10 +1440,10 @@ mixin PlayerGestureControlMixin
         return;
       }
     }
-    final maxVolume = supportsHighVolume && _highVolumeGestureUnlocked ? 150 : 100;
-    final int volume = _convertVolume((seek * 100).round())
-        .clamp(0, maxVolume)
-        .toInt();
+    final maxVolume =
+        supportsHighVolume && _highVolumeGestureUnlocked ? 150 : 100;
+    final int volume =
+        _convertVolume((seek * 100).round()).clamp(0, maxVolume).toInt();
     if (volume == lastVolume) {
       return;
     }
@@ -1613,6 +1615,38 @@ class PlayerController extends BaseController
   StreamSubscription? _heightSubscription;
   StreamSubscription? _logSubscription;
   StreamSubscription? _playingSubscription;
+  bool _playbackToggleInProgress = false;
+
+  Future<void> togglePlayback() async {
+    if (_playerClosing || _playbackToggleInProgress) {
+      return;
+    }
+    _playbackToggleInProgress = true;
+    try {
+      if (player.state.playing) {
+        userPausedState.value = true;
+        playingState.value = false;
+        await player.pause();
+        await WakelockPlus.disable();
+        await _syncBackgroundPlaybackService(false);
+        return;
+      }
+
+      userPausedState.value = false;
+      playingState.value = true;
+      await player.play();
+    } catch (e, stackTrace) {
+      playingState.value = player.state.playing;
+      Log.e("切换播放状态失败: $e", stackTrace);
+      SmartDialog.showToast("切换播放状态失败");
+    } finally {
+      _playbackToggleInProgress = false;
+    }
+  }
+
+  void resetUserPausedState() {
+    userPausedState.value = false;
+  }
 
   // Fix Issue #57: 流错误重试计数器
   int _streamErrorRetryCount = 0;
@@ -1686,6 +1720,7 @@ class PlayerController extends BaseController
     });
 
     _playingSubscription = player.stream.playing.listen((event) {
+      playingState.value = event;
       final generation = playbackLoadGeneration;
       _syncStreamErrorGeneration(generation);
       if (event) {
@@ -1697,6 +1732,8 @@ class PlayerController extends BaseController
         _scheduleStablePlaybackReset(generation);
       } else {
         _cancelStablePlaybackTimer();
+        unawaited(WakelockPlus.disable());
+        unawaited(_syncBackgroundPlaybackService(false));
       }
     });
 
@@ -1774,7 +1811,8 @@ class PlayerController extends BaseController
   Future<void> _handleStreamError(String error) async {
     final generation = playbackLoadGeneration;
     final mediaGeneration = playbackMediaGeneration;
-    if (!isPlaybackLoadGenerationCurrent(generation)) {
+    if (userPausedState.value ||
+        !isPlaybackLoadGenerationCurrent(generation)) {
       return;
     }
     _syncStreamErrorGeneration(generation);
@@ -1819,7 +1857,8 @@ class PlayerController extends BaseController
     await Future.delayed(const Duration(seconds: 1));
 
     try {
-      if (!isPlaybackLoadGenerationCurrent(generation)) {
+      if (userPausedState.value ||
+          !isPlaybackLoadGenerationCurrent(generation)) {
         return;
       }
       final currentMedia = player.state.playlist.medias.isNotEmpty
