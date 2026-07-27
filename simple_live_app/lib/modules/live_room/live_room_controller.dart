@@ -3094,6 +3094,7 @@ class LiveRoomController extends PlayerController
       while (true) {
         final currentSite = site;
         final currentRoomId = roomId;
+        resetHighVolumeGestureAuthorization();
         rxSite.value = currentSite;
         rxRoomId.value = currentRoomId;
         CurrentRoomService.instance.setRoom(currentSite, currentRoomId);

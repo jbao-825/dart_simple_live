@@ -118,6 +118,13 @@ mixin PlayerStateMixin on PlayerMixin {
   double _volumeBeforeMute = 100.0;
   bool _highVolumeGestureUnlockArmed = false;
   bool _highVolumeGestureUnlocked = false;
+  bool _highVolumeGestureCanUnlock = false;
+
+  void resetHighVolumeGestureAuthorization() {
+    _highVolumeGestureUnlockArmed = false;
+    _highVolumeGestureUnlocked = false;
+    _highVolumeGestureCanUnlock = false;
+  }
 
   void onPlayerWindowModeExited() {}
 
@@ -1333,10 +1340,7 @@ mixin PlayerGestureControlMixin
       },
     );
     lastVolume = -1;
-    if (_highVolumeGestureUnlockArmed) {
-      _highVolumeGestureUnlocked = true;
-      _highVolumeGestureUnlockArmed = false;
-    }
+    _highVolumeGestureCanUnlock = false;
 
     verticalDragging = true;
     _verticalDragReady = false;
@@ -1382,6 +1386,12 @@ mixin PlayerGestureControlMixin
       return;
     }
     _currentVolume = initialVolume ?? _currentVolume;
+    if (_currentVolume < 1 && !_highVolumeGestureUnlocked) {
+      _highVolumeGestureUnlockArmed = false;
+      _highVolumeGestureCanUnlock = false;
+    } else if (_highVolumeGestureUnlockArmed && !_highVolumeGestureUnlocked) {
+      _highVolumeGestureCanUnlock = true;
+    }
     _currentBrightness = initialBrightness;
     _verticalDragReady = true;
   }
@@ -1428,16 +1438,30 @@ mixin PlayerGestureControlMixin
       if (seek < 0) {
         seek = 0;
       }
+      if (seek < 1 && !_highVolumeGestureUnlocked) {
+        _highVolumeGestureUnlockArmed = false;
+        _highVolumeGestureCanUnlock = false;
+      }
     } else {
       value = ((dy - verStartPosition) / _verticalDragExtent);
       seek = value.abs() + _currentVolume;
-      if (seek > 1 && supportsHighVolume && !_highVolumeGestureUnlocked) {
+      if (seek >= 1 &&
+          supportsHighVolume &&
+          !_highVolumeGestureUnlocked &&
+          (!_highVolumeGestureUnlockArmed ||
+              (_highVolumeGestureCanUnlock && seek > 1))) {
+        if (_highVolumeGestureCanUnlock) {
+          _highVolumeGestureUnlocked = true;
+          _highVolumeGestureUnlockArmed = false;
+          _highVolumeGestureCanUnlock = false;
+        } else {
         seek = 1;
         showGestureTipText("音量已达 100%，再次向上滑动可提升至 150%");
         _highVolumeGestureUnlockArmed = true;
         lastVolume = 100;
         throttle?.invoke(() async => await _realSetVolume(100));
         return;
+        }
       }
     }
     final maxVolume =
