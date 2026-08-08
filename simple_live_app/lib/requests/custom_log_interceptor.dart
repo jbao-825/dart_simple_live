@@ -19,6 +19,9 @@ class CustomLogInterceptor extends Interceptor {
       Log.e('''【HTTP请求错误-${err.type}】 耗时:${time}ms
 ${HttpLogSanitizer.redactText(err.message, requestUri: err.requestOptions.uri)}
 
+Error Type: ${err.error?.runtimeType}
+Error Detail: ${err.error}
+
 Request Method：${err.requestOptions.method}
 Response Code：${err.response?.statusCode}
 Request URL：${HttpLogSanitizer.redactUri(err.requestOptions.uri)}
@@ -31,6 +34,9 @@ Response Data：${HttpLogSanitizer.redact(err.response?.data)}''',
     } else {
       CoreLog.e('''[HTTP Error] [${err.type}] [Time:${time}ms]
 ${HttpLogSanitizer.redactText(err.message, requestUri: err.requestOptions.uri)}
+
+Error Type: ${err.error?.runtimeType}
+Error Detail: ${err.error}
 
 Request Method：${err.requestOptions.method}
 Response Code：${err.response?.statusCode}

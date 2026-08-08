@@ -22,8 +22,10 @@ class BiliBiliAccountService extends GetxService {
 
   @override
   void onInit() {
-    cookie = LocalStorageService.instance
+    var savedCookie = LocalStorageService.instance
         .getValue(LocalStorageService.kBilibiliCookie, "");
+    // 清理cookie中的换行符，避免FormatException: Invalid HTTP header field value
+    cookie = savedCookie.replaceAll("\r", "").replaceAll("\n", "").trim();
     logined.value = cookie.isNotEmpty;
     loadUserInfo();
     super.onInit();
@@ -38,6 +40,9 @@ class BiliBiliAccountService extends GetxService {
         "https://api.bilibili.com/x/member/web/account",
         header: {
           "Cookie": cookie,
+          "User-Agent":
+              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+          "Referer": "https://www.bilibili.com/",
         },
       );
       if (result["code"] == 0) {
@@ -61,10 +66,11 @@ class BiliBiliAccountService extends GetxService {
   }
 
   void setCookie(String cookie) {
-    this.cookie = cookie;
+    // 清理cookie中的换行符，避免FormatException: Invalid HTTP header field value
+    this.cookie = cookie.replaceAll("\r", "").replaceAll("\n", "").trim();
     LocalStorageService.instance
-        .setValue(LocalStorageService.kBilibiliCookie, cookie);
-    logined.value = cookie.isNotEmpty;
+        .setValue(LocalStorageService.kBilibiliCookie, this.cookie);
+    logined.value = this.cookie.isNotEmpty;
   }
 
   void logout() async {
