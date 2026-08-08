@@ -17,7 +17,14 @@ class DouyuDanmaku implements LiveDanmaku {
   Function(String msg)? onClose;
   @override
   Function()? onReady;
-  String serverUrl = "wss://danmuproxy.douyu.com:8506";
+  String serverUrl = "wss://danmuproxy.douyu.com:8504";
+
+  // 备用弹幕服务器端口列表
+  final List<String> backupUrls = [
+    "wss://danmuproxy.douyu.com:8501",
+    "wss://danmuproxy.douyu.com:8503",
+    "wss://danmuproxy.douyu.com:8506",
+  ];
 
   WebScoketUtils? webScoketUtils;
 
@@ -26,6 +33,7 @@ class DouyuDanmaku implements LiveDanmaku {
     webScoketUtils = WebScoketUtils(
       url: serverUrl,
       heartBeatTime: heartbeatTime,
+      backupUrls: backupUrls,
       onMessage: (e) {
         decodeMessage(e);
       },
