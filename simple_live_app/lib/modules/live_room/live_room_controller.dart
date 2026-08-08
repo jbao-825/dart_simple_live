@@ -1514,6 +1514,7 @@ class LiveRoomController extends PlayerController
       }
 
       addHistory();
+      FollowService.instance.markRoomOpened(site.id, roomId);
       // 刷新关注状态
       followed.value = DBService.instance.getFollowExist("${site.id}_$roomId");
       online.value = detail.value!.online;

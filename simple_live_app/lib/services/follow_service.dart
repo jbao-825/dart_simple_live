@@ -69,6 +69,9 @@ class FollowService extends GetxService {
   int _updateGeneration = 0;
   DateTime? _lastUpdateStatusStartedAt;
 
+  /// ???????????????? (siteId_roomId -> ??????)?????????
+  final Map<String, DateTime> _openedRoomTimes = <String, DateTime>{};
+
   @override
   void onInit() {
     subscription = EventBus.instance.listen(Constant.kUpdateFollow, (p0) {
@@ -139,6 +142,13 @@ class FollowService extends GetxService {
   // 添加关注
   Future<void> addFollow(FollowUser follow) async {
     await DBService.instance.addFollow(follow);
+  }
+
+  /// ?????????????????????????????
+  void markRoomOpened(String siteId, String roomId) {
+    final key = "${siteId}_$roomId";
+    _openedRoomTimes[key] = DateTime.now();
+    filterData();
   }
 
   Future<void> updateSpecialFollow(FollowUser follow, bool value) async {
@@ -499,6 +509,22 @@ class FollowService extends GetxService {
   }
 
   int compareFollowUsers(FollowUser a, FollowUser b) {
+    final aId = a.id.trim().isNotEmpty ? a.id.trim() : "${a.siteId}_${a.roomId}";
+    final bId = b.id.trim().isNotEmpty ? b.id.trim() : "${b.siteId}_${b.roomId}";
+    final aOpened = _openedRoomTimes.containsKey(aId);
+    final bOpened = _openedRoomTimes.containsKey(bId);
+    if (aOpened && !bOpened) {
+      return -1;
+    }
+    if (!aOpened && bOpened) {
+      return 1;
+    }
+    if (aOpened && bOpened) {
+      final timeCompare = _openedRoomTimes[bId]!.compareTo(_openedRoomTimes[aId]!);
+      if (timeCompare != 0) {
+        return timeCompare;
+      }
+    }
     final aBucket = _sortBucket(a);
     final bBucket = _sortBucket(b);
     final liveCompare = aBucket.compareTo(bBucket);
