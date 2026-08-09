@@ -108,6 +108,8 @@ class AppSettingsController extends GetxController {
         .getValue(LocalStorageService.kDanmuBottomMargin, 0.0);
     danmuFontWeight.value = LocalStorageService.instance
         .getValue(LocalStorageService.kDanmuFontWeight, 4);
+    danmuShowRemarkEnable.value = LocalStorageService.instance
+        .getValue(LocalStorageService.kDanmuShowRemarkEnable, true);
     contributionRankEnable.value = LocalStorageService.instance
         .getValue(LocalStorageService.kContributionRankEnable, true);
 
@@ -861,6 +863,13 @@ class AppSettingsController extends GetxController {
     danmuRenderEmoji.value = e;
     LocalStorageService.instance
         .setValue(LocalStorageService.kDanmuRenderEmoji, e);
+  }
+
+  var danmuShowRemarkEnable = true.obs;
+  void setDanmuShowRemarkEnable(bool e) {
+    danmuShowRemarkEnable.value = e;
+    LocalStorageService.instance
+        .setValue(LocalStorageService.kDanmuShowRemarkEnable, e);
   }
 
   var danmuStrokeWidth = 2.0.obs;

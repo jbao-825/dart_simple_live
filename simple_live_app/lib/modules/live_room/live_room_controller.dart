@@ -779,7 +779,27 @@ class LiveRoomController extends PlayerController
     final totalDelayMs = baseDelayMs + (site.id == Constant.kHuya ? 1000 : 0);
     final delay = Duration(milliseconds: totalDelayMs.clamp(0, 6000));
     final renderEmoji = AppSettingsController.instance.danmuRenderEmoji.value;
+    final showRemark = AppSettingsController.instance.danmuShowRemarkEnable.value;
+    final remark = showRemark ? getUserRemark(msg.userName) : null;
+    final remarkPrefix = remark != null && remark.isNotEmpty ? "[$remark]" : "";
     final parts = renderEmoji ? _buildDanmakuContentParts(msg.spans) : null;
+
+    // 带备注的 parts：在头部插入备注文本
+    List<DanmakuContentPart>? effectiveParts;
+    if (parts != null && remarkPrefix.isNotEmpty) {
+      effectiveParts = [
+        DanmakuContentPart.text(remarkPrefix),
+        ...parts,
+      ];
+    } else {
+      effectiveParts = parts;
+    }
+
+    // 带备注的纯文本（parts 为空时使用）
+    final effectiveText = remarkPrefix.isNotEmpty && parts == null
+        ? "$remarkPrefix${msg.message}"
+        : msg.message;
+
     rememberDanmakuReplay(
       msg.message,
       color,
@@ -796,10 +816,10 @@ class LiveRoomController extends PlayerController
       }
       addDanmaku([
         DanmakuContentItem(
-          msg.message,
+          effectiveText,
           color: color,
           imageUrls: renderEmoji && parts == null ? msg.imageUrls : null,
-          parts: parts,
+          parts: effectiveParts,
         ),
       ]);
     }

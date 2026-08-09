@@ -184,6 +184,15 @@ class DanmuSettingsView extends GetView<AppSettingsController> {
               AppStyle.divider,
               Obx(
                 () => SettingsSwitch(
+                  title: "显示用户备注",
+                  subtitle: "已备注用户发送的弹幕会显示备注前缀",
+                  value: controller.danmuShowRemarkEnable.value,
+                  onChanged: controller.setDanmuShowRemarkEnable,
+                ),
+              ),
+              AppStyle.divider,
+              Obx(
+                () => SettingsSwitch(
                   title: "重点动态",
                   subtitle: "汇总短时间内重复较多的弹幕内容",
                   value: controller.liveEventFlowEnable.value,

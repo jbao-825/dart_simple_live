@@ -54,6 +54,7 @@ class LocalStorageService extends GetxService {
   static const String kDanmuKeywordShieldEnable = "DanmuKeywordShieldEnable";
   static const String kDanmuUserShieldEnable = "DanmuUserShieldEnable";
   static const String kDanmuFontWeight = "DanmuFontWeight";
+  static const String kDanmuShowRemarkEnable = "DanmuShowRemarkEnable";
   static const String kContributionRankEnable = "ContributionRankEnable";
   static const String kHardwareDecode = "HardwareDecode";
   static const String kChatTextSize = "ChatTextSize";
