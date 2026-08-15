@@ -40,9 +40,6 @@ class BiliBiliAccountService extends GetxService {
         "https://api.bilibili.com/x/member/web/account",
         header: {
           "Cookie": cookie,
-          "User-Agent":
-              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-          "Referer": "https://www.bilibili.com/",
         },
       );
       if (result["code"] == 0) {
