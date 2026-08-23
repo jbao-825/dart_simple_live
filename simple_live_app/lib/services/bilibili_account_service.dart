@@ -47,9 +47,15 @@ class BiliBiliAccountService extends GetxService {
         name.value = info.uname ?? "未登录";
         uid = info.mid ?? 0;
         setSite();
-      } else {
+      } else if (result["code"] == -101) {
+        // 只有明确返回"未登录"时才清空 cookie
         SmartDialog.showToast("哔哩哔哩登录已失效，请重新登录");
         logout();
+      } else {
+        // 其他错误（-352风控、服务异常等）只提示，保留 cookie 避免重复登录
+        SmartDialog.showToast(
+          "哔哩哔哩登录态验证失败（code=${result["code"]}），cookie 已保留，稍后可重试",
+        );
       }
     } catch (e) {
       SmartDialog.showToast("获取哔哩哔哩用户信息失败，可前往账号管理重试");

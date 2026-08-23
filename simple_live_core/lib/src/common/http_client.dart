@@ -1,5 +1,8 @@
+import 'dart:io' as io;
+
 import 'package:simple_live_core/src/common/core_error.dart';
 import 'package:dio/dio.dart';
+import 'package:dio/io.dart';
 
 import 'custom_interceptor.dart';
 
@@ -20,6 +23,24 @@ class HttpClient {
         sendTimeout: Duration(seconds: 20),
       ),
     );
+
+    // 配置 HTTP 代理，仅对 B 站请求生效，用于绕过 B 站 -352 风控
+    // 不需要代理时注释掉下面这段即可
+    final adapter = IOHttpClientAdapter();
+    adapter.createHttpClient = () {
+      final client = io.HttpClient();
+      client.findProxy = (uri) {
+        final host = uri.host;
+        if (host.contains('bilibili.com') ||
+            host.contains('bilivideo.cn')) {
+          return "PROXY 127.0.0.1:7890";
+        }
+        return "DIRECT";
+      };
+      return client;
+    };
+    dio.httpClientAdapter = adapter;
+
     dio.interceptors.add(CustomInterceptor());
   }
 
