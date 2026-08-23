@@ -80,6 +80,47 @@ class OtherSettingsPage extends GetView<OtherSettingsController> {
           Padding(
             padding: AppStyle.edgeInsetsA12.copyWith(top: 24),
             child: Text(
+              "网络代理",
+              style: Get.textTheme.titleSmall,
+            ),
+          ),
+          SettingsCard(
+            child: Column(
+              children: [
+                Obx(
+                  () => SettingsSwitch(
+                    value: controller.proxyEnabled.value,
+                    title: "启用代理",
+                    subtitle: "开启后 HTTP 请求走指定代理，用于绕过平台风控",
+                    onChanged: controller.setProxyEnabled,
+                  ),
+                ),
+                AppStyle.divider,
+                Obx(
+                  () => SettingsSwitch(
+                    value: controller.proxyBilibiliOnly.value,
+                    title: "仅 B 站使用代理",
+                    subtitle: "开启后只代理 bilibili.com，其他平台直连",
+                    onChanged: controller.setProxyBilibiliOnly,
+                  ),
+                ),
+                AppStyle.divider,
+                GetBuilder<OtherSettingsController>(
+                  builder: (controller) => SettingsAction(
+                    title: "代理地址",
+                    subtitle: "格式 host:port，例如 127.0.0.1:7890",
+                    value: controller.proxyAddress.value.isEmpty
+                        ? "未设置"
+                        : controller.proxyAddress.value,
+                    onTap: controller.editProxyAddress,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: AppStyle.edgeInsetsA12.copyWith(top: 24),
+            child: Text(
               "播放器高级设置",
               style: Get.textTheme.titleSmall,
             ),

@@ -437,6 +437,22 @@ Future initServices() async {
   //本地存储
   Log.d("Init LocalStorage Service");
   await Get.put(LocalStorageService()).init();
+
+  // 应用代理配置（必须在 LocalStorageService 初始化后、任何网络请求前）
+  HttpClient.setProxySettings(
+    enabled: LocalStorageService.instance.getValue(
+      LocalStorageService.kHttpProxyEnable,
+      false,
+    ),
+    address: LocalStorageService.instance.getValue(
+      LocalStorageService.kHttpProxyAddress,
+      "127.0.0.1:7890",
+    ),
+    bilibiliOnly: LocalStorageService.instance.getValue(
+      LocalStorageService.kHttpProxyBilibiliOnly,
+      true,
+    ),
+  );
   await Get.put(DBService()).init();
   Get.put(CurrentRoomService());
   //初始化设置控制器

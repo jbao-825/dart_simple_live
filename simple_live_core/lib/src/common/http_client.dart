@@ -9,6 +9,23 @@ import 'custom_interceptor.dart';
 class HttpClient {
   static HttpClient? _httpUtil;
 
+  // 代理配置（静态，所有实例共享）
+  static bool _proxyEnabled = false;
+  static String _proxyAddress = "";
+  static bool _proxyBilibiliOnly = true;
+
+  /// 动态设置代理配置，即时生效
+  static void setProxySettings({
+    required bool enabled,
+    required String address,
+    bool bilibiliOnly = true,
+  }) {
+    _proxyEnabled = enabled;
+    _proxyAddress = address;
+    _proxyBilibiliOnly = bilibiliOnly;
+    _httpUtil?._applyProxy();
+  }
+
   static HttpClient get instance {
     _httpUtil ??= HttpClient();
     return _httpUtil!;
@@ -24,24 +41,36 @@ class HttpClient {
       ),
     );
 
-    // 配置 HTTP 代理，仅对 B 站请求生效，用于绕过 B 站 -352 风控
-    // 不需要代理时注释掉下面这段即可
+    _applyProxy();
+    dio.interceptors.add(CustomInterceptor());
+  }
+
+  /// 根据当前代理配置应用到 dio
+  void _applyProxy() {
+    if (!_proxyEnabled || _proxyAddress.trim().isEmpty) {
+      // 关闭代理，恢复默认 adapter（直连）
+      dio.httpClientAdapter = IOHttpClientAdapter();
+      return;
+    }
+
+    final address = _proxyAddress.trim();
     final adapter = IOHttpClientAdapter();
     adapter.createHttpClient = () {
       final client = io.HttpClient();
       client.findProxy = (uri) {
-        final host = uri.host;
-        if (host.contains('bilibili.com') ||
-            host.contains('bilivideo.cn')) {
-          return "PROXY 127.0.0.1:7890";
+        if (_proxyBilibiliOnly) {
+          final host = uri.host;
+          if (host.contains('bilibili.com') ||
+              host.contains('bilivideo.cn')) {
+            return "PROXY $address";
+          }
+          return "DIRECT";
         }
-        return "DIRECT";
+        return "PROXY $address";
       };
       return client;
     };
     dio.httpClientAdapter = adapter;
-
-    dio.interceptors.add(CustomInterceptor());
   }
 
   /// Get请求，返回String

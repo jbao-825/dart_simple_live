@@ -8,6 +8,7 @@ export 'src/douyu_site.dart';
 export 'src/douyin_site.dart';
 export 'src/kuaishou_site.dart';
 export 'src/common/core_error.dart';
+export 'src/common/http_client.dart';
 export 'src/common/auto_exit_session.dart';
 export 'src/common/core_log.dart';
 export 'src/common/douyin_cookie_helper.dart';

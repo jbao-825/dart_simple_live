@@ -25,6 +25,11 @@ import 'package:simple_live_core/simple_live_core.dart';
 class OtherSettingsController extends BaseController {
   RxList<LogFileModel> logFiles = <LogFileModel>[].obs;
 
+  // 代理设置
+  var proxyEnabled = false.obs;
+  var proxyAddress = "127.0.0.1:7890".obs;
+  var proxyBilibiliOnly = true.obs;
+
   var videoOutputDrivers = {
     "gpu": "gpu",
     "gpu-next": "gpu-next",
@@ -95,7 +100,87 @@ class OtherSettingsController extends BaseController {
   @override
   void onInit() {
     loadLogFiles();
+    _loadProxySettings();
     super.onInit();
+  }
+
+  void _loadProxySettings() {
+    proxyEnabled.value = LocalStorageService.instance.getValue(
+      LocalStorageService.kHttpProxyEnable,
+      false,
+    );
+    proxyAddress.value = LocalStorageService.instance.getValue(
+      LocalStorageService.kHttpProxyAddress,
+      "127.0.0.1:7890",
+    );
+    proxyBilibiliOnly.value = LocalStorageService.instance.getValue(
+      LocalStorageService.kHttpProxyBilibiliOnly,
+      true,
+    );
+    _applyProxyToHttpClient();
+  }
+
+  void _applyProxyToHttpClient() {
+    HttpClient.setProxySettings(
+      enabled: proxyEnabled.value,
+      address: proxyAddress.value,
+      bilibiliOnly: proxyBilibiliOnly.value,
+    );
+  }
+
+  Future<void> setProxyEnabled(bool value) async {
+    proxyEnabled.value = value;
+    await LocalStorageService.instance.setValue(
+      LocalStorageService.kHttpProxyEnable,
+      value,
+    );
+    _applyProxyToHttpClient();
+  }
+
+  Future<void> setProxyBilibiliOnly(bool value) async {
+    proxyBilibiliOnly.value = value;
+    await LocalStorageService.instance.setValue(
+      LocalStorageService.kHttpProxyBilibiliOnly,
+      value,
+    );
+    _applyProxyToHttpClient();
+  }
+
+  Future<void> editProxyAddress() async {
+    final value = await Utils.showEditTextDialog(
+      proxyAddress.value,
+      title: "代理地址",
+      hintText: "例如 127.0.0.1:7890",
+      validate: (text) {
+        final addr = text.trim();
+        if (addr.isEmpty) {
+          return true;
+        }
+        // 简单校验 host:port 格式
+        final parts = addr.split(':');
+        if (parts.length != 2) {
+          SmartDialog.showToast("请输入 host:port 格式，例如 127.0.0.1:7890");
+          return false;
+        }
+        final port = int.tryParse(parts[1]);
+        if (port == null || port < 1 || port > 65535) {
+          SmartDialog.showToast("端口号无效");
+          return false;
+        }
+        return true;
+      },
+    );
+    if (value == null) {
+      return;
+    }
+    proxyAddress.value = value.trim();
+    await LocalStorageService.instance.setValue(
+      LocalStorageService.kHttpProxyAddress,
+      proxyAddress.value,
+    );
+    _applyProxyToHttpClient();
+    SmartDialog.showToast("代理地址已保存");
+    update();
   }
 
   void setLogEnable(e) {
