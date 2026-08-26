@@ -8,7 +8,7 @@ import 'package:simple_live_app/app/sites.dart';
 import 'package:simple_live_app/models/account/bilibili_user_info_page.dart';
 import 'package:simple_live_app/requests/http_client.dart';
 import 'package:simple_live_app/services/local_storage_service.dart';
-import 'package:simple_live_core/simple_live_core.dart';
+import 'package:simple_live_core/simple_live_core.dart' hide HttpClient;
 
 class BiliBiliAccountService extends GetxService {
   static BiliBiliAccountService get instance =>
