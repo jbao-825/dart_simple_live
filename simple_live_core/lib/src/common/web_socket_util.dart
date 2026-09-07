@@ -1,6 +1,9 @@
 import 'dart:async';
+import 'dart:io' as io;
 
 import 'package:web_socket_channel/io.dart';
+
+import 'http_client.dart';
 
 enum SocketStatus { connected, failed, closed }
 
@@ -60,6 +63,9 @@ class WebScoketUtils {
 
   StreamSubscription<dynamic>? streamSubscription;
 
+  /// 走代理时持有的 HttpClient，连接关闭时一并释放，避免泄漏
+  io.HttpClient? _proxyClient;
+
   List<String> get _connectUrls {
     final urls = <String>[url];
     if (backupUrl != null && backupUrl!.isNotEmpty) {
@@ -75,14 +81,21 @@ class WebScoketUtils {
     Object? lastError;
     StackTrace? lastStackTrace;
     for (final wsurl in urls) {
+      io.HttpClient? proxyClient;
       try {
-        webSocket = IOWebSocketChannel.connect(
+        // 与 HTTP 请求共用同一套代理判定：仅 B 站域名且已启用代理时走代理
+        final proxy = HttpClient.resolveProxy(Uri.parse(wsurl).host);
+        if (proxy != null) {
+          proxyClient = io.HttpClient();
+          proxyClient.findProxy = (_) => "PROXY $proxy";
+        }
+        final socket = await io.WebSocket.connect(
           wsurl,
-          connectTimeout: Duration(seconds: 10),
           headers: headers,
-        );
-
-        await webSocket?.ready;
+          customClient: proxyClient,
+        ).timeout(const Duration(seconds: 10));
+        webSocket = IOWebSocketChannel(socket);
+        _proxyClient = proxyClient;
         ready();
         return;
       } catch (e, s) {
@@ -90,6 +103,7 @@ class WebScoketUtils {
         lastStackTrace = s;
         webSocket?.sink.close();
         webSocket = null;
+        proxyClient?.close(force: true);
       }
     }
     onError(lastError ?? "WebSocket connection failed", lastStackTrace);
@@ -151,6 +165,9 @@ class WebScoketUtils {
     reconnectTimer = null;
 
     webSocket?.sink.close();
+
+    _proxyClient?.close(force: true);
+    _proxyClient = null;
 
     heartBeatTimer?.cancel();
     heartBeatTimer = null;

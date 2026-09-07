@@ -42,6 +42,7 @@ import 'package:simple_live_core/simple_live_core.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:window_manager/window_manager.dart';
+import 'package:simple_live_app/services/local_storage_service.dart';
 
 class LiveRoomController extends PlayerController
     with WidgetsBindingObserver, WindowListener {
@@ -233,6 +234,9 @@ class LiveRoomController extends PlayerController
   int? _playerReopeningGeneration;
   bool _roomDisposed = false;
   int _loadGeneration = 0;
+
+  /// B站弹幕自愈：是否由本次连接临时开启了代理（退出时恢复，不写持久设置）
+  bool _danmakuProxyAutoEnabled = false;
   final Set<String> _superChatFingerprints = <String>{};
   LiveRepeatedDanmuAggregator _liveEventFlowAggregator =
       LiveRepeatedDanmuAggregator();
@@ -1343,6 +1347,7 @@ class LiveRoomController extends PlayerController
       await player.stop();
     }
     await liveDanmaku.stop();
+    _restoreProxyIfAuto();
     LiveSubtitleService.instance.stop();
     super.onClose();
   }
@@ -1455,6 +1460,127 @@ class LiveRoomController extends PlayerController
     addSysMsg("弹幕服务器连接成功");
   }
 
+  /// 启动弹幕；B站在弹幕信息缺失时自动重试，必要时临时切换代理
+  void _startDanmakuWithRecovery() {
+    final args = detail.value?.danmakuData;
+    if (site.id != Constant.kBiliBili || args is! BiliBiliDanmakuArgs) {
+      liveDanmaku.start(args);
+      return;
+    }
+    _recoverBiliDanmaku(args);
+  }
+
+  /// B站弹幕自愈：直连重试3次，仍失败则临时启用代理再试
+  Future<void> _recoverBiliDanmaku(BiliBiliDanmakuArgs initialArgs) async {
+    final generation = _loadGeneration;
+    bool alive() => _isCurrentLoad(generation);
+
+    if (initialArgs.token.isNotEmpty) {
+      liveDanmaku.start(initialArgs);
+      return;
+    }
+
+    // 直连重试 3 次，间隔 1s/2s/3s
+    for (var attempt = 1; attempt <= 3; attempt++) {
+      addSysMsg("B站弹幕信息缺失，正在重试连接($attempt/3)");
+      await Future.delayed(Duration(seconds: attempt));
+      if (!alive()) return;
+      final refreshed = await _refreshBiliDanmakuArgs();
+      if (refreshed != null && refreshed.token.isNotEmpty) {
+        addSysMsg("弹幕信息获取成功，正在连接");
+        liveDanmaku.start(refreshed);
+        return;
+      }
+    }
+
+    // 直连失败，临时切换代理（仅内存生效，不写入用户持久设置）
+    if (!_beginTemporaryProxy()) {
+      addSysMsg("弹幕连接失败：未配置可用代理，可在 其他设置 中配置代理地址");
+      return;
+    }
+    addSysMsg("直连重试失败，已临时切换网络代理访问");
+    for (var attempt = 1; attempt <= 3; attempt++) {
+      await Future.delayed(Duration(seconds: attempt));
+      if (!alive()) return;
+      final refreshed = await _refreshBiliDanmakuArgs();
+      if (refreshed != null && refreshed.token.isNotEmpty) {
+        addSysMsg("代理网络获取弹幕信息成功，正在连接");
+        liveDanmaku.start(refreshed);
+        return;
+      }
+      addSysMsg("代理网络重试($attempt/3)");
+    }
+    addSysMsg("弹幕连接失败：直连与代理均无法获取弹幕信息，请检查网络或代理");
+  }
+
+  /// 重新请求B站弹幕参数（getDanmuInfo），失败返回 null
+  Future<BiliBiliDanmakuArgs?> _refreshBiliDanmakuArgs() async {
+    try {
+      final roomId = detail.value?.roomId;
+      if (roomId == null || roomId.isEmpty) {
+        return null;
+      }
+      final biliSite = site.liveSite as BiliBiliSite;
+      return await biliSite.getDanmakuArgs(realRoomId: roomId);
+    } catch (e) {
+      Log.w("刷新B站弹幕信息失败：$e");
+      return null;
+    }
+  }
+
+  /// 临时启用代理（仅内存生效，不写持久设置），返回是否成功
+  bool _beginTemporaryProxy() {
+    final storage = LocalStorageService.instance;
+    final address = storage
+        .getValue<String>(
+          LocalStorageService.kHttpProxyAddress,
+          "127.0.0.1:7890",
+        )
+        .trim();
+    if (address.isEmpty) {
+      return false;
+    }
+    final bilibiliOnly = storage.getValue<bool>(
+          LocalStorageService.kHttpProxyBilibiliOnly,
+          true,
+        ) ==
+        true;
+    HttpClient.setProxySettings(
+      enabled: true,
+      address: address,
+      bilibiliOnly: bilibiliOnly,
+    );
+    _danmakuProxyAutoEnabled = true;
+    Log.i("B站弹幕直连失败，已临时启用代理：$address");
+    return true;
+  }
+
+  /// 若代理是本次弹幕自愈临时开启的，恢复为用户持久化的原始设置
+  void _restoreProxyIfAuto() {
+    if (!_danmakuProxyAutoEnabled) {
+      return;
+    }
+    _danmakuProxyAutoEnabled = false;
+    final storage = LocalStorageService.instance;
+    HttpClient.setProxySettings(
+      enabled: storage.getValue<bool>(
+            LocalStorageService.kHttpProxyEnable,
+            false,
+          ) ==
+          true,
+      address: storage.getValue<String>(
+        LocalStorageService.kHttpProxyAddress,
+        "127.0.0.1:7890",
+      ),
+      bilibiliOnly: storage.getValue<bool>(
+            LocalStorageService.kHttpProxyBilibiliOnly,
+            true,
+          ) ==
+          true,
+    );
+    Log.i("已恢复用户原代理设置");
+  }
+
   /// 加载直播间信息
   void loadData() async {
     final loadGeneration = ++_loadGeneration;
@@ -1468,6 +1594,7 @@ class LiveRoomController extends PlayerController
       errorStackTrace = null;
       update();
       await liveDanmaku.stop();
+      _restoreProxyIfAuto();
       if (!_isCurrentLoad(loadGeneration)) {
         return;
       }
@@ -1553,7 +1680,7 @@ class LiveRoomController extends PlayerController
         return;
       }
       initDanmau();
-      liveDanmaku.start(detail.value?.danmakuData);
+      _startDanmakuWithRecovery();
       startLiveDurationTimer();
     } catch (e, stackTrace) {
       Log.logPrint(e);

@@ -26,6 +26,29 @@ class HttpClient {
     _httpUtil?._applyProxy();
   }
 
+  /// 当前是否启用代理
+  static bool get isProxyEnabled => _proxyEnabled;
+
+  /// 当前代理地址（已去除首尾空格）
+  static String get proxyAddress => _proxyAddress.trim();
+
+  /// 是否仅代理 B 站相关域名
+  static bool get isProxyBilibiliOnly => _proxyBilibiliOnly;
+
+  /// 解析访问 [host] 时应使用的代理地址；应直连时返回 null。
+  /// HTTP 请求与弹幕 WebSocket 共用同一套判定，避免两处逻辑不一致。
+  static String? resolveProxy(String host) {
+    if (!_proxyEnabled || _proxyAddress.trim().isEmpty) {
+      return null;
+    }
+    if (_proxyBilibiliOnly &&
+        !host.contains('bilibili.com') &&
+        !host.contains('bilivideo.cn')) {
+      return null;
+    }
+    return _proxyAddress.trim();
+  }
+
   static HttpClient get instance {
     _httpUtil ??= HttpClient();
     return _httpUtil!;
@@ -53,20 +76,12 @@ class HttpClient {
       return;
     }
 
-    final address = _proxyAddress.trim();
     final adapter = IOHttpClientAdapter();
     adapter.createHttpClient = () {
       final client = io.HttpClient();
       client.findProxy = (uri) {
-        if (_proxyBilibiliOnly) {
-          final host = uri.host;
-          if (host.contains('bilibili.com') ||
-              host.contains('bilivideo.cn')) {
-            return "PROXY $address";
-          }
-          return "DIRECT";
-        }
-        return "PROXY $address";
+        final proxy = resolveProxy(uri.host);
+        return proxy == null ? "DIRECT" : "PROXY $proxy";
       };
       return client;
     };

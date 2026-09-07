@@ -325,11 +325,13 @@ class BiliBiliSite implements LiveSite {
     return LiveCategoryResult(hasMore: hasMore, items: items);
   }
 
-  @override
-  Future<LiveRoomDetail> getRoomDetail({required String roomId}) async {
-    var roomInfo = await getRoomInfo(roomId: roomId);
-    var realRoomId = roomInfo["room_info"]["room_id"].toString();
 
+  /// 仅获取弹幕连接参数（getDanmuInfo 接口）。
+  /// 该接口在部分网络下可能被拦截，失败时返回 token 为空的参数且不抛异常，
+  /// 以便上层重试或切换代理后再次调用。
+  Future<BiliBiliDanmakuArgs> getDanmakuArgs({
+    required String realRoomId,
+  }) async {
     const danmuInfoBaseUrl =
         "https://api.live.bilibili.com/xlive/web-room/v1/index/getDanmuInfo";
     var danmuInfoUrl = "$danmuInfoBaseUrl?id=$realRoomId";
@@ -364,6 +366,25 @@ class BiliBiliSite implements LiveSite {
       CoreLog.w("B站弹幕信息获取失败：roomId=$realRoomId error=$e");
     }
 
+    return BiliBiliDanmakuArgs(
+      roomId: int.tryParse(realRoomId) ?? 0,
+      uid: userId,
+      token: danmuData?["token"]?.toString() ?? "",
+      serverHost: serverHosts.isNotEmpty
+          ? serverHosts.first
+          : "broadcastlv.chat.bilibili.com",
+      buvid: buvid3,
+      cookie: cookie,
+    );
+  }
+
+  @override
+  Future<LiveRoomDetail> getRoomDetail({required String roomId}) async {
+    var roomInfo = await getRoomInfo(roomId: roomId);
+    var realRoomId = roomInfo["room_info"]["room_id"].toString();
+
+    final danmakuArgs = await getDanmakuArgs(realRoomId: realRoomId);
+
     //var buvid = await getBuvid();
     String? liveStartTime = roomInfo["room_info"]?["live_start_time"]
         ?.toString();
@@ -379,16 +400,7 @@ class BiliBiliSite implements LiveSite {
       url: "https://live.bilibili.com/$roomId",
       introduction: roomInfo["room_info"]["description"].toString(),
       notice: "",
-      danmakuData: BiliBiliDanmakuArgs(
-        roomId: int.tryParse(realRoomId) ?? 0,
-        uid: userId,
-        token: danmuData?["token"]?.toString() ?? "",
-        serverHost: serverHosts.isNotEmpty
-            ? serverHosts.first
-            : "broadcastlv.chat.bilibili.com",
-        buvid: buvid3,
-        cookie: cookie,
-      ),
+      danmakuData: danmakuArgs,
       showTime: liveStartTime, // 将 liveStartTime 赋值给 showTime 字段
       categoryId: roomInfo["room_info"]["area_id"]?.toString(),
       categoryName: roomInfo["room_info"]["area_name"]?.toString(),
