@@ -14,7 +14,6 @@ import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:canvas_danmaku/canvas_danmaku.dart';
 import 'package:volume_controller/volume_controller.dart';
-import 'package:screen_brightness/screen_brightness.dart';
 import 'package:simple_live_app/app/controller/app_settings_controller.dart';
 import 'package:simple_live_app/app/controller/base_controller.dart';
 import 'package:simple_live_app/app/custom_throttle.dart';
@@ -501,15 +500,6 @@ mixin PlayerSystemMixin on PlayerMixin, PlayerStateMixin, PlayerDanmakuMixin {
       await resetPreferredOrientation();
       _mobileSystemUiApplied = false;
     }
-    if (Platform.isAndroid || Platform.isIOS || Platform.isMacOS) {
-      // 亮度重置,桌面平台可能会报错,暂时不处理桌面平台的亮度
-      try {
-        await ScreenBrightness.instance.resetApplicationScreenBrightness();
-      } catch (e) {
-        Log.logPrint(e);
-      }
-    }
-
     await WakelockPlus.disable();
   }
 
