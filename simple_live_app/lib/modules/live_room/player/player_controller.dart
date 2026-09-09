@@ -1191,6 +1191,11 @@ mixin PlayerSystemMixin on PlayerMixin, PlayerStateMixin, PlayerDanmakuMixin {
     }
   }
 }
+
+bool canStartVolumeVerticalDrag(double localX, double width) {
+  return localX >= width / 2;
+}
+
 mixin PlayerGestureControlMixin
     on PlayerStateMixin, PlayerMixin, PlayerSystemMixin {
   /// 单击显示/隐藏控制器
@@ -1267,9 +1272,7 @@ mixin PlayerGestureControlMixin
   }
 
   bool verticalDragging = false;
-  bool leftVerticalDrag = false;
   var _currentVolume = 0.0;
-  var _currentBrightness = 1.0;
   var verStartPosition = 0.0;
   var _verticalDragExtent = 1.0;
   var _useLocalDragPosition = false;
@@ -1284,7 +1287,6 @@ mixin PlayerGestureControlMixin
     throttle?.cancel();
     throttle = null;
     verticalDragging = false;
-    leftVerticalDrag = false;
     _useLocalDragPosition = false;
     _verticalDragReady = false;
   }
@@ -1295,7 +1297,7 @@ mixin PlayerGestureControlMixin
     Size? viewportSize,
   }) async {
     clearGestureTip();
-    // A new drag invalidates any pending system-volume/brightness read from
+    // A new drag invalidates any pending system-volume read from
     // the previous drag before checking whether this gesture is usable.
     cancelVerticalDrag();
     showMouseCursor();
@@ -1330,7 +1332,9 @@ mixin PlayerGestureControlMixin
 
     verStartPosition = dy;
     _verticalDragExtent = math.max(height * 0.5, 1.0);
-    leftVerticalDrag = localX < width / 2;
+    if (!canStartVolumeVerticalDrag(localX, width)) {
+      return;
+    }
 
     throttle?.cancel();
     throttle = DelayedThrottle(
@@ -1346,7 +1350,6 @@ mixin PlayerGestureControlMixin
     _verticalDragReady = false;
     final dragGeneration = ++_verticalDragGeneration;
     double? initialVolume;
-    var initialBrightness = 1.0;
     var volumeReadSucceeded = true;
     if (Platform.isWindows || Platform.isLinux) {
       final currentPlayerVolume = player.state.volume;
@@ -1365,21 +1368,10 @@ mixin PlayerGestureControlMixin
         Log.e("读取系统音量失败: $e", stackTrace);
       }
     }
-    if (Platform.isAndroid ||
-        Platform.isIOS ||
-        Platform.isMacOS ||
-        Platform.isWindows ||
-        Platform.isLinux) {
-      try {
-        initialBrightness = await ScreenBrightness.instance.application;
-      } catch (e, stackTrace) {
-        Log.e("读取应用亮度失败: $e", stackTrace);
-      }
-    }
     if (dragGeneration != _verticalDragGeneration || !verticalDragging) {
       return;
     }
-    if (!leftVerticalDrag && !volumeReadSucceeded) {
+    if (!volumeReadSucceeded) {
       // Do not calculate a new value from the previous gesture when the
       // system-volume read failed; the next gesture can retry the read.
       verticalDragging = false;
@@ -1392,7 +1384,6 @@ mixin PlayerGestureControlMixin
     } else if (_highVolumeGestureUnlockArmed && !_highVolumeGestureUnlocked) {
       _highVolumeGestureCanUnlock = true;
     }
-    _currentBrightness = initialBrightness;
     _verticalDragReady = true;
   }
 
@@ -1418,11 +1409,7 @@ mixin PlayerGestureControlMixin
         _useLocalDragPosition ? e.localPosition.dy : e.globalPosition.dy;
     Log.logPrint("$verStartPosition/$dragPosition");
 
-    if (leftVerticalDrag) {
-      setGestureBrightness(dragPosition);
-    } else {
-      setGestureVolume(dragPosition);
-    }
+    setGestureVolume(dragPosition);
   }
 
   int lastVolume = -1; // it's ok to be -1
@@ -1455,12 +1442,12 @@ mixin PlayerGestureControlMixin
           _highVolumeGestureUnlockArmed = false;
           _highVolumeGestureCanUnlock = false;
         } else {
-        seek = 1;
-        showGestureTipText("音量已达 100%，再次向上滑动可提升至 150%");
-        _highVolumeGestureUnlockArmed = true;
-        lastVolume = 100;
-        throttle?.invoke(() async => await _realSetVolume(100));
-        return;
+          seek = 1;
+          showGestureTipText("音量已达 100%，再次向上滑动可提升至 150%");
+          _highVolumeGestureUnlockArmed = true;
+          lastVolume = 100;
+          throttle?.invoke(() async => await _realSetVolume(100));
+          return;
         }
       }
     }
@@ -1490,32 +1477,6 @@ mixin PlayerGestureControlMixin
     }
     // 手势只调系统音量，播放器内部音量由独立设置控制。
     await VolumeController.instance.setVolume(volume / 100);
-  }
-
-  void setGestureBrightness(double dy) {
-    double value = 0.0;
-    if (dy > verStartPosition) {
-      value = ((dy - verStartPosition) / _verticalDragExtent);
-
-      var seek = _currentBrightness - value;
-      if (seek < 0) {
-        seek = 0;
-      }
-      ScreenBrightness.instance.setApplicationScreenBrightness(seek);
-
-      showGestureTipText("亮度 ${(seek * 100).toInt()}%");
-      Log.logPrint(value);
-    } else {
-      value = ((dy - verStartPosition) / _verticalDragExtent);
-      var seek = value.abs() + _currentBrightness;
-      if (seek > 1) {
-        seek = 1;
-      }
-
-      ScreenBrightness.instance.setApplicationScreenBrightness(seek);
-      showGestureTipText("亮度 ${(seek * 100).toInt()}%");
-      Log.logPrint(value);
-    }
   }
 
   /// 竖向手势完成
@@ -1835,8 +1796,7 @@ class PlayerController extends BaseController
   Future<void> _handleStreamError(String error) async {
     final generation = playbackLoadGeneration;
     final mediaGeneration = playbackMediaGeneration;
-    if (userPausedState.value ||
-        !isPlaybackLoadGenerationCurrent(generation)) {
+    if (userPausedState.value || !isPlaybackLoadGenerationCurrent(generation)) {
       return;
     }
     _syncStreamErrorGeneration(generation);

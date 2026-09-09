@@ -108,8 +108,8 @@ class PlaySettingsPage extends GetView<AppSettingsController> {
                 AppStyle.divider,
                 Obx(
                   () => SettingsSwitch(
-                    title: "滑动调节音量/亮度",
-                    subtitle: "播放页左右两侧上下滑动调节亮度和音量",
+                    title: "滑动调节音量",
+                    subtitle: "播放页右侧上下滑动调节音量",
                     value: controller.playerGestureControlEnable.value,
                     onChanged: (e) {
                       controller.setPlayerGestureControlEnable(e);
