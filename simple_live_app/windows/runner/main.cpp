@@ -68,5 +68,17 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
     }
     ::CloseHandle(primary_instance_mutex);
   }
+
+  // Workaround: flutter_inappwebview_windows 0.6.0 destroys its static
+  // WinRT Compositor during DLL_PROCESS_DETACH, after dcomp/CoreMessaging
+  // has already shut down. This raises an access violation and surfaces as
+  // an "Unknown Hard Error" popup. See:
+  //   pichillilorenzo/flutter_inappwebview#2733, #2512
+  //   (unfixed on the stable 6.1.5 / windows 0.6.0 release)
+  // At this point the window and the Flutter engine are already destroyed
+  // and Dart-side _closeAppGracefully has flushed all data, so terminate
+  // immediately to skip the faulty static destructors. The OS reclaims any
+  // remaining handles. TerminateProcess does not return.
+  ::TerminateProcess(::GetCurrentProcess(), 0);
   return EXIT_SUCCESS;
 }
