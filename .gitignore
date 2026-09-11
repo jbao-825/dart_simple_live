@@ -1,36 +1,90 @@
-# Editor settings
+# =============================================================================
+# Operating-system metadata
+# =============================================================================
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# =============================================================================
+# Editor / IDE settings
+# =============================================================================
+.idea/
+.fleet/
+.vscode/
 simple_live_app/.vscode/settings.json
 simple_live_tv_app/.vscode/settings.json
 
-# Local workspace metadata
+# =============================================================================
+# Local workspace metadata & agent caches
+# =============================================================================
 .codex/
 .agents/
+.uploads/
 
-# Local release and build artifacts
+# =============================================================================
+# Dart / Flutter build & dependency artifacts
+# =============================================================================
+**/build/
+**/.dart_tool/
+**/.flutter-plugins
+**/.flutter-plugins-dependencies
+**/pubspec.lock
+**/android/app/build/
+**/android/.kotlin/
+
+# =============================================================================
+# Release outputs & generated workspace data
+# =============================================================================
 release/
 models/
 docs/
 issue_logs/
 experience/
 graphify-out/
-**/android/app/build/
 tools/
 
-# Local scripts
+# =============================================================================
+# Local build scripts & vendored third-party archives
+# =============================================================================
 build_android_apk.bat
 build_tv_apk.bat
 deploy_windows.bat
+third_party/mpv-dev-x86_64-20260828-git-182fa6ca49.7z
 
-# Local temp workspace files
+# =============================================================================
+# Logs & traces
+# =============================================================================
+*.log
+*.trace
+
+# =============================================================================
+# Temporary notes, triage docs and scratch files
+# =============================================================================
 fix-guide.md
+todo.md
+update.md
+BUGFIX_SUMMARY.md
+.release-*.md
+WORK_COMPLETE.txt
 tmp_*.png
 tmp_*.xml
 images/todo/
 
-# macOS metadata
-*.DS_Store
+# =============================================================================
+# Backups, exports and merge leftovers
+# =============================================================================
+.backup/
+*.bak
+*.backup
+*.orig
+*.rej
 
-# Markdown docs
+# =============================================================================
+# Markdown policy: ignore docs by default, keep curated ones
+# =============================================================================
 *.md
 !README.md
+!THANKS.md
+!SETTINGS_GUIDE.md
 !**/README.md
+.codex/project-experience.md

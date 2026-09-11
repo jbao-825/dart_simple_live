@@ -11,6 +11,7 @@ import 'package:simple_live_tv_app/app/controller/app_settings_controller.dart';
 import 'package:simple_live_tv_app/app/sites.dart';
 import 'package:simple_live_tv_app/app/utils.dart';
 import 'package:simple_live_tv_app/modules/live_room/live_room_controller.dart';
+import 'package:simple_live_tv_app/services/db_service.dart';
 import 'package:simple_live_tv_app/services/follow_user_service.dart';
 import 'package:simple_live_tv_app/widgets/button/highlight_button.dart';
 import 'package:simple_live_tv_app/widgets/card/anchor_card.dart';
@@ -187,6 +188,14 @@ Widget buildControls(VideoState videoState, LiveRoomController controller) {
                     ),
                     AppStyle.hGap16,
                     Text("下一频道", style: AppStyle.textStyleWhite),
+                    AppStyle.hGap32,
+                    Icon(
+                      Icons.play_circle_fill,
+                      color: Colors.white,
+                      size: 40.w,
+                    ),
+                    AppStyle.hGap16,
+                    Text("暂停/继续", style: AppStyle.textStyleWhite),
                     AppStyle.hGap32,
                     Icon(
                       Icons.arrow_circle_left_outlined,
@@ -389,6 +398,7 @@ void showPlayerSettings(LiveRoomController controller) {
 
   var followFocusNode = AppFocusNode()..isFoucsed.value = true;
   var specialFollowFocusNode = AppFocusNode();
+  var followTagFocusNode = AppFocusNode();
   var qualityFoucsNode = AppFocusNode();
   var lineFoucsNode = AppFocusNode();
   var scaleFoucsNode = AppFocusNode();
@@ -460,6 +470,29 @@ void showPlayerSettings(LiveRoomController controller) {
                   },
                 ),
               ),
+              AppStyle.vGap24,
+              Obx(
+                () {
+                  final options = FollowUserService.instance.tagOptions;
+                  final items = <int, String>{
+                    for (var i = 0; i < options.length; i++) i: options[i],
+                  };
+                  final current = DBService.instance.followBox
+                      .get("${controller.rxSite.value.id}_${controller.roomId}")
+                      ?.tag;
+                  final value =
+                      options.indexOf(current ?? FollowUserService.allTagName);
+                  return SettingsItemWidget(
+                    foucsNode: followTagFocusNode,
+                    title: "关注标签",
+                    items: items,
+                    value: value < 0 ? 0 : value,
+                    onChanged: (e) {
+                      controller.setCurrentFollowTag(options[e as int]);
+                    },
+                  );
+                },
+              ),
 
               Divider(color: Colors.grey.withAlpha(50), height: 36.w),
               AppStyle.vGap24,
@@ -488,6 +521,14 @@ void showPlayerSettings(LiveRoomController controller) {
                   onChanged: (e) {
                     Get.back();
                     controller.currentQuality = e;
+                    // 保存清晰度记忆。
+                    if (e >= 0 && e < controller.qualites.length) {
+                      AppSettingsController.instance.saveQualityMemory(
+                        siteId: controller.site.id,
+                        qualityName: controller.qualites[e].quality,
+                        offsetFromTop: e,
+                      );
+                    }
                     controller.getPlayUrl();
                   },
                 ),
@@ -573,6 +614,9 @@ void showPlayerSettings(LiveRoomController controller) {
                     56.0: "56",
                     64.0: "64",
                     72.0: "72",
+                    96.0: "96",
+                    120.0: "120",
+                    144.0: "144",
                   },
                   value: AppSettingsController.instance.danmuSize.value,
                   onChanged: (e) {
@@ -601,6 +645,8 @@ void showPlayerSettings(LiveRoomController controller) {
                     8.0: "快",
                     6.0: "较快",
                     4.0: "很快",
+                    2.0: "极速",
+                    1.0: "最快",
                   },
                   value: AppSettingsController.instance.danmuSpeed.value,
                   onChanged: (e) {

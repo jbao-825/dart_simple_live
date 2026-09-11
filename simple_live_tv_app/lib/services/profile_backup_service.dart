@@ -11,6 +11,8 @@ import 'package:simple_live_tv_app/services/bilibili_account_service.dart';
 import 'package:simple_live_tv_app/services/bulk_data_import_service.dart';
 import 'package:simple_live_tv_app/services/db_service.dart';
 import 'package:simple_live_tv_app/services/douyin_account_service.dart';
+import 'package:simple_live_tv_app/services/follow_user_service.dart';
+import 'package:simple_live_tv_app/services/kuaishou_account_service.dart';
 import 'package:simple_live_tv_app/services/local_storage_service.dart';
 
 class ProfileBackupService extends GetxService {
@@ -36,6 +38,10 @@ class ProfileBackupService extends GetxService {
         .getFollowList()
         .map((item) => item.toJson())
         .toList();
+    final followTags = DBService.instance
+        .getFollowTagList()
+        .map((item) => item.toJson())
+        .toList();
     final histories =
         DBService.instance.getHistores().map((item) => item.toJson()).toList();
     return {
@@ -49,14 +55,14 @@ class ProfileBackupService extends GetxService {
       "danmuShield": shieldPayload,
       "shieldPresets": const [],
       "followUsers": followUsers,
-      "followUserTags": const [],
+      "followUserTags": followTags,
       "histories": histories,
       "summary": {
         "settingCount": settingsPayload.length,
         "keywordShieldCount": (shieldPayload["keywords"] as List).length,
         "userShieldCount": 0,
         "followUserCount": followUsers.length,
-        "followTagCount": 0,
+        "followTagCount": followTags.length,
         "historyCount": histories.length,
         "accountCount": (_exportAccounts()["items"] as List).length,
       },
@@ -137,6 +143,10 @@ class ProfileBackupService extends GetxService {
         summary,
         overwrite,
         onProgress,
+      );
+      await _importFollowTags(
+        _readPayloadList(payload, const ["followUserTags", "followTags"]),
+        summary,
       );
     }
     if (options.histories) {
@@ -272,6 +282,21 @@ class ProfileBackupService extends GetxService {
             "",
           ),
         },
+        {
+          "siteId": Constant.kKuaishou,
+          "cookie": LocalStorageService.instance.getValue(
+            LocalStorageService.kKuaishouCookie,
+            "",
+          ),
+          "kww": LocalStorageService.instance.getValue(
+            LocalStorageService.kKuaishouKww,
+            "",
+          ),
+          "cookieExpiresAt": LocalStorageService.instance.getValue(
+            LocalStorageService.kKuaishouCookieExpiresAt,
+            0,
+          ),
+        },
       ],
     };
   }
@@ -375,6 +400,21 @@ class ProfileBackupService extends GetxService {
             DouyinAccountService.instance.setCookie(cookie);
           }
           break;
+        case Constant.kKuaishou:
+          final kww = item["kww"]?.toString() ?? "";
+          final expiresAtMs = (item["cookieExpiresAt"] as num?)?.toInt() ?? 0;
+          if (cookie.isEmpty) {
+            KuaishouAccountService.instance.clearCookie();
+          } else {
+            KuaishouAccountService.instance.setCookie(
+              cookie,
+              kww: kww.isEmpty ? null : kww,
+              expiresAt: expiresAtMs > 0
+                  ? DateTime.fromMillisecondsSinceEpoch(expiresAtMs)
+                  : null,
+            );
+          }
+          break;
       }
     }
   }
@@ -392,6 +432,55 @@ class ProfileBackupService extends GetxService {
     );
     summary.followUsers += result.imported;
     summary.skipped += result.skipped;
+  }
+
+  /// 导入自定义标签（与手机端配置包兼容）；成员关系以 FollowUser.tag 冗余字段重建
+  Future<void> _importFollowTags(
+    dynamic rawTags,
+    ProfileImportSummary summary,
+  ) async {
+    if (rawTags is! List || rawTags.isEmpty) {
+      return;
+    }
+    int imported = 0;
+    for (final item in rawTags) {
+      if (item is! Map) {
+        continue;
+      }
+      final tagName = item["tag"]?.toString().trim() ?? "";
+      if (tagName.isEmpty ||
+          tagName == FollowUserService.allTagName ||
+          tagName.length > DBService.followTagMaxLength) {
+        continue;
+      }
+      if (DBService.instance.getFollowTagExistByTag(tagName)) {
+        continue;
+      }
+      final tag = await DBService.instance.addFollowTag(tagName);
+      if (tag == null) {
+        continue;
+      }
+      imported++;
+    }
+    // 依据关注数据补全每个标签的成员列表
+    final follows = DBService.instance.getFollowList();
+    for (final tag in DBService.instance.getFollowTagList()) {
+      final memberIds = follows
+          .where((e) => e.tag.trim() == tag.tag)
+          .map((e) => e.id)
+          .toSet();
+      bool changed = false;
+      for (final id in memberIds) {
+        if (!tag.userId.contains(id)) {
+          tag.userId.add(id);
+          changed = true;
+        }
+      }
+      if (changed) {
+        await DBService.instance.updateFollowTag(tag);
+      }
+    }
+    summary.followTags += imported;
   }
 
   Future<void> _importHistories(
@@ -508,12 +597,13 @@ class ProfileImportSummary {
   int settings = 0;
   int shields = 0;
   int followUsers = 0;
+  int followTags = 0;
   int histories = 0;
   int skipped = 0;
 
   String get message {
     final base =
-        "设置 $settings 项，屏蔽 $shields 项，关注 $followUsers 个，历史 $histories 条";
+        "设置 $settings 项，屏蔽 $shields 项，关注 $followUsers 个，标签 $followTags 个，历史 $histories 条";
     return skipped > 0 ? "$base，跳过异常 $skipped 条" : base;
   }
 }

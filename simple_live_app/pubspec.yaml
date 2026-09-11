@@ -1,5 +1,5 @@
 name: simple_live_app
-version: 1.12.7+11207
+version: 1.13.1+11301
 publish_to: none
 description: "Simple Live APP"
 environment:
@@ -54,7 +54,8 @@ dependencies:
   cross_file: ^0.3.5 #跨平台文件
   permission_handler: ^12.0.1 #权限处理
   image_gallery_saver_plus: ^4.0.1 #图片保存到相册
-  auto_orientation_v2: ^2.3.6 #屏幕方向
+  # 本地已移除亮度控制功能，不引入 screen_brightness；版本对齐上游
+  auto_orientation_v2: 2.3.8 #屏幕方向
   wakelock_plus: ^1.4.0 #屏幕常亮
   file_picker: ^10.3.7 #文件选择
   window_manager: ^0.5.1 #窗口管理
@@ -72,16 +73,16 @@ dependencies:
   web_socket_channel: ^3.0.1 #远程同步WebSocket
 
   # 视频播放
-  media_kit: ^1.2.2
-  media_kit_video: ^2.0.0
-  media_kit_libs_video: ^1.0.7
+  # 2.0.1 fixes Windows video texture callbacks being sent from a worker thread.
+  media_kit: 1.2.6
+  media_kit_video: 2.0.1
+  media_kit_libs_video: 1.0.7
 
   flutter:
     sdk: flutter
   flutter_localizations:
     sdk: flutter
-  sherpa_onnx: ^1.13.2
-
+  sherpa_onnx: 1.13.4
 
 dev_dependencies:
   flutter_lints: ^2.0.0
@@ -92,8 +93,11 @@ dev_dependencies:
     sdk: flutter
 
 dependency_overrides:
+  sherpa_onnx_ios: 1.13.4
   canvas_danmaku:
     path: ../third_party/canvas_danmaku
+  media_kit_libs_windows_video:
+    path: ../third_party/media_kit_libs_windows_video
 
 flutter_launcher_icons:
   android: true
@@ -109,5 +113,6 @@ flutter:
     - assets/statement.txt
     - assets/images/
     - assets/images/douyin_emoji/
+    - assets/images/douyin_games/
     - assets/icons/
     - assets/lotties/

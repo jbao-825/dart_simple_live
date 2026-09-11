@@ -20,8 +20,10 @@ import 'package:simple_live_app/app/log.dart';
 import 'package:simple_live_app/app/sites.dart';
 import 'package:simple_live_app/app/utils.dart';
 import 'package:simple_live_app/models/db/follow_user.dart';
+import 'package:simple_live_app/models/db/follow_user_tag.dart';
 import 'package:simple_live_app/models/db/history.dart';
 import 'package:simple_live_app/modules/live_room/player/player_controller.dart';
+import 'package:simple_live_app/modules/live_room/live_status_refresh_policy.dart';
 import 'package:simple_live_app/modules/live_room/widgets/live_contribution_rank_panel.dart';
 import 'package:simple_live_app/modules/settings/danmu_settings_page.dart';
 import 'package:simple_live_app/routes/app_navigation.dart';
@@ -193,6 +195,7 @@ class LiveRoomController extends PlayerController
   var countdown = 60.obs;
 
   Timer? autoExitTimer;
+  Timer? _autoExitDeadlineTimer;
   final AutoExitSession _autoExitSession = AutoExitSession();
   final autoExitSource = AutoExitSource.none.obs;
   bool _autoExitCompleting = false;
@@ -248,14 +251,18 @@ class LiveRoomController extends PlayerController
   Timer? _superChatRefreshTimer;
   Timer? _chatBottomRestoreTimer;
   Timer? _onlineRefreshTimer;
+  Timer? _memoryCleanupTimer; // 内存清理定时器
   bool _onlineRefreshInFlight = false;
+  final LiveStatusRefreshPolicy _onlineStatusRefreshPolicy =
+      LiveStatusRefreshPolicy();
+  bool _volumeSliderPointerEntered = false;
   bool _autoPipAttempting = false;
 
   @override
   void onInit() {
     CurrentRoomService.instance.setRoom(site, roomId);
     WidgetsBinding.instance.addObserver(this);
-    if (Platform.isWindows) {
+    if (_usesDesktopWindowManager) {
       windowManager.addListener(this);
     }
     if (initialDesktopSidePanelCollapsed ||
@@ -272,6 +279,7 @@ class LiveRoomController extends PlayerController
     followed.value = DBService.instance.getFollowExist("${site.id}_$roomId");
     loadData();
     _startLiveEventFlowTimer();
+    _startMemoryCleanupTimer(); // 启动内存清理定时器
 
     scrollController.addListener(scrollListener);
 
@@ -954,9 +962,24 @@ class LiveRoomController extends PlayerController
     _superChatRefreshTimer = null;
   }
 
+  /// 启动内存清理定时器（iOS 内存优化）
+  void _startMemoryCleanupTimer() {
+    _memoryCleanupTimer?.cancel();
+    // 每分钟清理一次过期的 SuperChat
+    _memoryCleanupTimer = Timer.periodic(const Duration(minutes: 1), (_) {
+      removeSuperChats(); // 清理过期 SC
+      // 消息列表已经在添加时自动限制，这里再检查一次
+      if (messages.length > 1000) {
+        Log.d("内存清理：消息列表过大 (${messages.length})，清理到 500 条");
+        messages.removeRange(0, messages.length - 500);
+      }
+    });
+  }
+
   void _restartOnlineRefreshTimer() {
     _onlineRefreshTimer?.cancel();
     _onlineRefreshInFlight = false;
+    _onlineStatusRefreshPolicy.reset();
     if (!liveStatus.value) {
       return;
     }
@@ -984,14 +1007,33 @@ class LiveRoomController extends PlayerController
             roomId != refreshRoomId) {
           return;
         }
-        online.value = roomDetail.online;
-        liveStatus.value = roomDetail.status || roomDetail.isRecord;
-        if (!liveStatus.value) {
-          _onlineRefreshTimer?.cancel();
-          _onlineRefreshTimer = null;
-          _restartSuperChatRefreshTimer();
+        final reportedLive = roomDetail.status || roomDetail.isRecord;
+        if (reportedLive) {
+          _onlineStatusRefreshPolicy.reset();
+          online.value = roomDetail.online;
+          liveStatus.value = true;
+          return;
         }
+        final confirmedOffline = _onlineStatusRefreshPolicy.confirmOffline(
+          reportedLive: false,
+          hasActivePlaybackEvidence:
+              player.state.playing || player.state.buffering,
+        );
+        if (!confirmedOffline) {
+          Log.d(
+            "刷新${site.name}状态暂未确认下播: "
+            "${_onlineStatusRefreshPolicy.consecutiveOfflineCount}/"
+            "${_onlineStatusRefreshPolicy.requiredOfflineConfirmations}",
+          );
+          return;
+        }
+        online.value = roomDetail.online;
+        liveStatus.value = false;
+        _onlineRefreshTimer?.cancel();
+        _onlineRefreshTimer = null;
+        _restartSuperChatRefreshTimer();
       } catch (e) {
+        _onlineStatusRefreshPolicy.reset();
         Log.d("刷新${site.name}热度失败: $e");
       } finally {
         if (_isCurrentLoad(refreshGeneration)) {
@@ -1132,7 +1174,7 @@ class LiveRoomController extends PlayerController
   /// 初始化自动关闭计时器
   void initAutoExit() {
     final settings = AppSettingsController.instance;
-    autoExitTimer?.cancel();
+    _cancelAutoExitTimers();
     _autoExitSession.stop();
     autoExitSource.value = AutoExitSource.none;
     _autoExitCompleting = false;
@@ -1148,6 +1190,7 @@ class LiveRoomController extends PlayerController
       minutes: autoExitMinutes.value,
     );
     autoExitSource.value = AutoExitSource.global;
+    Log.i("定时关闭已启用，将在${autoExitMinutes.value}分钟后关闭");
     _startAutoExitTicker();
   }
 
@@ -1161,17 +1204,50 @@ class LiveRoomController extends PlayerController
       minutes: autoExitMinutes.value,
     );
     autoExitSource.value = AutoExitSource.roomOverride;
+    Log.i("定时关闭（房间覆盖）已设置，将在${autoExitMinutes.value}分钟后关闭");
     _startAutoExitTicker();
   }
 
-  void _startAutoExitTicker() {
+  void _cancelAutoExitTimers() {
     autoExitTimer?.cancel();
+    autoExitTimer = null;
+    _autoExitDeadlineTimer?.cancel();
+    _autoExitDeadlineTimer = null;
+  }
+
+  void _scheduleAutoExitDeadline() {
+    _autoExitDeadlineTimer?.cancel();
+    _autoExitDeadlineTimer = null;
+    if (!autoExitEnable.value || !_autoExitSession.enabled) {
+      return;
+    }
+    final deadline = _autoExitSession.deadline;
+    if (deadline == null) {
+      return;
+    }
+    final delay =
+        deadline.difference(DateTime.now()) + const Duration(milliseconds: 80);
+    if (delay <= Duration.zero) {
+      unawaited(_completeAutoExit());
+      return;
+    }
+    _autoExitDeadlineTimer = Timer(delay, () {
+      _autoExitDeadlineTimer = null;
+      _refreshAutoExitCountdown();
+    });
+  }
+
+  void _startAutoExitTicker() {
+    _cancelAutoExitTimers();
     _autoExitCompleting = false;
     _refreshAutoExitCountdown();
+    // Keep a 1s UI tick for the countdown label, and also schedule a one-shot
+    // timer to the absolute deadline so a delayed periodic tick cannot miss it.
     autoExitTimer = Timer.periodic(
       const Duration(seconds: 1),
       (_) => _refreshAutoExitCountdown(),
     );
+    _scheduleAutoExitDeadline();
   }
 
   void _refreshAutoExitCountdown() {
@@ -1181,9 +1257,12 @@ class LiveRoomController extends PlayerController
     final now = DateTime.now();
     final remaining = _autoExitSession.remaining(now);
     countdown.value = remaining == Duration.zero ? 0 : remaining.inSeconds + 1;
+
     if (_autoExitSession.isDue(now)) {
       unawaited(_completeAutoExit());
+      return;
     }
+    _scheduleAutoExitDeadline();
   }
 
   Future<void> _completeAutoExit() async {
@@ -1191,18 +1270,20 @@ class LiveRoomController extends PlayerController
       return;
     }
     _autoExitCompleting = true;
-    autoExitTimer?.cancel();
+    _cancelAutoExitTimers();
     _autoExitSession.stop();
     autoExitSource.value = AutoExitSource.none;
     autoExitEnable.value = false;
     countdown.value = 0;
     Log.i(
         "定时关闭到点：platform=${Platform.operatingSystem} room=${site.id}/$roomId");
+    Log.i("定时关闭开始执行，准备关闭播放器和服务");
     await _runAutoExitStep("取消自动画中画", cancelAutoPipOnLeave);
     await _runAutoExitStep("停止后台播放服务", stopBackgroundPlaybackService);
     await _runAutoExitStep("停止弹幕", liveDanmaku.stop);
     await _runAutoExitStep("停止播放器", player.stop);
     await _runAutoExitStep("释放唤醒锁", WakelockPlus.disable);
+    Log.i("定时关闭准备退出应用");
     await _finishAutoExit();
   }
 
@@ -1261,7 +1342,7 @@ class LiveRoomController extends PlayerController
 
   void stopAutoExit() {
     autoExitEnable.value = false;
-    autoExitTimer?.cancel();
+    _cancelAutoExitTimers();
     _autoExitSession.stop();
     autoExitSource.value = AutoExitSource.none;
     _autoExitCompleting = false;
@@ -1313,13 +1394,17 @@ class LiveRoomController extends PlayerController
     forceChatScrollToBottom(delay: const Duration(milliseconds: 120));
   }
 
+  bool get _usesDesktopWindowManager {
+    return Platform.isWindows || Platform.isMacOS || Platform.isLinux;
+  }
+
   @override
   void onClose() async {
     _roomDisposed = true;
     clearTransientPlayerOverlays();
     _loadGeneration += 1;
     WidgetsBinding.instance.removeObserver(this);
-    if (Platform.isWindows) {
+    if (_usesDesktopWindowManager) {
       windowManager.removeListener(this);
     }
     unawaited(cancelAutoPipOnLeave());
@@ -1329,12 +1414,14 @@ class LiveRoomController extends PlayerController
     liveRoomFollowDialogScrollController.dispose();
     liveRoomHistoryScrollController.dispose();
     liveRoomRecommendationScrollController.dispose();
-    autoExitTimer?.cancel();
+    _cancelAutoExitTimers();
     _autoExitSession.stop();
     _superChatRefreshTimer?.cancel();
     _liveEventFlowTimer?.cancel();
     _onlineRefreshTimer?.cancel();
+    _onlineStatusRefreshPolicy.reset();
     _chatBottomRestoreTimer?.cancel();
+    _memoryCleanupTimer?.cancel(); // 取消内存清理定时器
     _cancelPendingDanmakuTimers();
     clearDanmakuReplayHistory();
     _liveDurationTimer?.cancel();
@@ -1410,6 +1497,11 @@ class LiveRoomController extends PlayerController
 
       messages.add(msg);
 
+      // 限制消息列表大小，防止内存溢出（特别是 iOS）
+      if (messages.length > 1000) {
+        messages.removeRange(0, 500); // 保留最近 500 条
+      }
+
       WidgetsBinding.instance.addPostFrameCallback(
         (_) => chatScrollToBottom(),
       );
@@ -1434,6 +1526,38 @@ class LiveRoomController extends PlayerController
         return;
       }
       _appendSuperChats([superChat]);
+
+      // SC 全屏滚动显示
+      if (AppSettingsController.instance.superChatScrollInFullscreen.value &&
+          fullScreenState.value) {
+        // 格式化为：【头条】用户名：内容
+        final formattedMessage =
+            "【头条】${superChat.userName}：${superChat.message}";
+        final scDanmakuMsg = LiveMessage(
+          type: LiveMessageType.chat,
+          userName: superChat.userName,
+          message: formattedMessage,
+          color: LiveMessageColor(255, 215, 0), // 金黄色，醒目
+        );
+
+        // 添加到消息列表（聊天区显示）
+        messages.add(scDanmakuMsg);
+
+        // 限制消息列表大小
+        if (messages.length > 1000) {
+          messages.removeRange(0, 500);
+        }
+
+        WidgetsBinding.instance.addPostFrameCallback(
+          (_) => chatScrollToBottom(),
+        );
+
+        // 如果当前在播放且不在后台，显示为滚动弹幕
+        if (liveStatus.value && !isBackground) {
+          _scheduleOverlayDanmaku(scDanmakuMsg);
+        }
+      }
+
       return;
     }
   }
@@ -1749,6 +1873,25 @@ class LiveRoomController extends PlayerController
       } else if (qualityLevel == 0) {
         // 最低
         currentQuality = playQualites.length - 1;
+      } else if (qualityLevel == 3) {
+        // 记住上次：按名称精确匹配，名称不存在时按偏移兜底。
+        final memory =
+            AppSettingsController.instance.getQualityMemory(site.id);
+        if (memory != null) {
+          final resolved = QualityMemory.resolveIndex(
+            qualities: playQualites,
+            savedName: memory.name,
+            savedOffset: memory.offset,
+          );
+          if (resolved >= 0) {
+            currentQuality = resolved;
+          }
+        }
+        // 找不到记忆或匹配失败时，走"中等"兜底（与旧 else 分支相同）。
+        if (currentQuality < 0) {
+          int middle = (playQualites.length / 2).floor();
+          currentQuality = middle;
+        }
       } else {
         // 中间档
         int middle = (playQualites.length / 2).floor();
@@ -2120,6 +2263,24 @@ class LiveRoomController extends PlayerController
     }
   }
 
+  @override
+  void refreshPlayback() {
+    // 手动刷新，直接触发错误恢复流程
+    mediaError("用户手动刷新");
+  }
+
+  /// 暂停/继续：暂停冻结画面；继续时刷新直播流回到最新画面
+  Future<void> togglePlayPauseWithRefresh() async {
+    if (player.state.playing) {
+      await player.pause();
+      return;
+    }
+    await player.play();
+    // 手动动作，重置自动重试计数，避免连续暂停/继续误触线路切换
+    mediaErrorRetryCount = 0;
+    refreshPlayback();
+  }
+
   /// 读取头条 / SC
   void getSuperChatMessage({bool silent = false}) async {
     if (detail.value == null) {
@@ -2197,6 +2358,59 @@ class LiveRoomController extends PlayerController
     );
     followed.value = true;
     EventBus.instance.emit(Constant.kUpdateFollow, id);
+  }
+
+  /// 在直播间给当前主播设置关注标签。
+  Future<void> showCurrentFollowTagSheet() async {
+    if (detail.value == null) {
+      return;
+    }
+    final id = "${site.id}_$roomId";
+    if (!DBService.instance.getFollowExist(id)) {
+      followUser();
+    }
+    final item = DBService.instance.followBox.get(id);
+    if (item == null) {
+      return;
+    }
+    if (FollowService.instance.followTagList.isEmpty) {
+      FollowService.instance.getAllTagList();
+    }
+    final tags = [
+      FollowUserTag(id: "__all__", tag: "全部", userId: []),
+      ...FollowService.instance.followTagList,
+    ];
+    final selected = tags.firstWhere(
+      (tag) => tag.tag == item.tag,
+      orElse: () => tags.first,
+    );
+    Utils.showOptionDialog<FollowUserTag>(
+      tags,
+      selected,
+      title: "设置标签",
+      titleBuilder: (tag) => Text(tag.tag),
+    ).then((target) {
+      if (target == null) return;
+      final current = DBService.instance.followBox.get(id);
+      if (current == null) return;
+      final oldTag = FollowService.instance.followTagList.firstWhere(
+        (tag) => tag.tag == current.tag,
+        orElse: () => FollowUserTag(id: "__all__", tag: "全部", userId: []),
+      );
+      oldTag.userId.remove(id);
+      if (target.tag != "全部") {
+        target.userId.addIf(!target.userId.contains(id), id);
+      }
+      current.tag = target.tag;
+      DBService.instance.addFollow(current);
+      if (oldTag.id != "__all__") {
+        FollowService.instance.updateFollowUserTag(oldTag);
+      }
+      if (target.id != "__all__") {
+        FollowService.instance.updateFollowUserTag(target);
+      }
+      EventBus.instance.emit(Constant.kUpdateFollow, id);
+    });
   }
 
   /// 取消关注当前主播
@@ -2330,21 +2544,52 @@ class LiveRoomController extends PlayerController
     );
   }
 
+  void _cancelVolumeSliderDismiss() {
+    hidevolumeTimer?.cancel();
+    hidevolumeTimer = null;
+  }
+
+  void _scheduleVolumeSliderDismiss(Duration delay) {
+    _cancelVolumeSliderDismiss();
+    hidevolumeTimer = Timer(delay, () {
+      hidevolumeTimer = null;
+      _volumeSliderPointerEntered = false;
+      volumeSliderVisible = false;
+      SmartDialog.dismiss(tag: volumeSliderDialogTag);
+    });
+  }
+
   void showVolumeSlider(
     BuildContext targetContext, {
     bool keepAlive = false,
   }) {
-    hidevolumeTimer?.cancel();
+    // The attach dialog uses a full-screen mask. Keep the player controls from
+    // treating that mask transition as a pointer exit and dismissing the
+    // slider immediately after it opens.
+    hideControlsTimer?.cancel();
+    hideControlsTimer = null;
+    _cancelVolumeSliderDismiss();
+    volumeSliderVisible = true;
+    _volumeSliderPointerEntered = false;
+    _scheduleVolumeSliderDismiss(
+      keepAlive ? const Duration(seconds: 6) : const Duration(seconds: 4),
+    );
     SmartDialog.showAttach(
       targetContext: targetContext,
       alignment: Alignment.topCenter,
-      displayTime: keepAlive ? null : const Duration(seconds: 4),
+      displayTime: null,
       maskColor: const Color(0x00000000),
+      clickMaskDismiss: false,
+      usePenetrate: true,
+      useAnimation: false,
       tag: volumeSliderDialogTag,
       keepSingle: true,
       builder: (context) {
         return MouseRegion(
-          onEnter: (_) => hidevolumeTimer?.cancel(),
+          onEnter: (_) {
+            _volumeSliderPointerEntered = true;
+            _cancelVolumeSliderDismiss();
+          },
           onExit: (_) => hideVolumeSlider(),
           child: Container(
             decoration: BoxDecoration(
@@ -2359,6 +2604,7 @@ class LiveRoomController extends PlayerController
                   min: 0,
                   max: 100,
                   value: AppSettingsController.instance.playerVolume.value,
+                  onChangeStart: (_) => _cancelVolumeSliderDismiss(),
                   onChanged: (newValue) {
                     setSessionPlayerVolume(newValue, persist: true);
                   },
@@ -2369,19 +2615,13 @@ class LiveRoomController extends PlayerController
         );
       },
     );
-    if (keepAlive) {
-      hidevolumeTimer = Timer(const Duration(seconds: 6), () {
-        hidevolumeTimer = null;
-        SmartDialog.dismiss(tag: volumeSliderDialogTag);
-      });
-    }
   }
 
   void hideVolumeSlider() {
-    hidevolumeTimer?.cancel();
-    hidevolumeTimer = Timer(const Duration(milliseconds: 220), () {
-      SmartDialog.dismiss(tag: volumeSliderDialogTag);
-    });
+    if (!_volumeSliderPointerEntered) {
+      return;
+    }
+    _scheduleVolumeSliderDismiss(const Duration(milliseconds: 600));
   }
 
   void showQualitySheet() {
@@ -2392,6 +2632,14 @@ class LiveRoomController extends PlayerController
         onChanged: (e) {
           Get.back();
           currentQuality = e ?? 0;
+          // 保存清晰度记忆。
+          if (currentQuality >= 0 && currentQuality < qualites.length) {
+            AppSettingsController.instance.saveQualityMemory(
+              siteId: site.id,
+              qualityName: qualites[currentQuality].quality,
+              offsetFromTop: currentQuality,
+            );
+          }
           getPlayUrl();
         },
         child: ListView.builder(
@@ -3300,6 +3548,12 @@ ${errorStackTrace ?? ""}''');
   }
 
   @override
+  void didChangeMetrics() {
+    super.didChangeMetrics();
+    refreshIosVideoOutputLimit(force: true);
+  }
+
+  @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
 
@@ -3406,6 +3660,20 @@ ${errorStackTrace ?? ""}''');
     );
   }
 
+  @override
+  void onWindowEnterFullScreen() {
+    if (_usesDesktopWindowManager && !smallWindowState.value) {
+      fullScreenState.value = true;
+    }
+  }
+
+  @override
+  void onWindowLeaveFullScreen() {
+    if (_usesDesktopWindowManager && !smallWindowState.value) {
+      fullScreenState.value = false;
+    }
+  }
+
   // 启动并更新开播时长计时器
   void startLiveDurationTimer() {
     // 非开播状态，或没有 showTime 时，不启动计时器。
@@ -3443,7 +3711,7 @@ ${errorStackTrace ?? ""}''');
       windowManager.removeListener(this);
     }
     scrollController.removeListener(scrollListener);
-    autoExitTimer?.cancel();
+    _cancelAutoExitTimers();
     _positionSubscription?.cancel();
 
     liveDanmaku.stop();

@@ -182,6 +182,65 @@ class DanmuSettingsView extends GetView<AppSettingsController> {
                 ),
               ),
               AppStyle.divider,
+              // 显示区域和显示几行 - 提到前面
+              Obx(
+                () => SettingsNumber(
+                  title: "显示区域",
+                  value: (controller.danmuArea.value * 100).toInt(),
+                  min: 10,
+                  max: 100,
+                  step: 10,
+                  unit: "%",
+                  onChanged: (e) {
+                    final nextArea = e / 100.0;
+                    controller.setDanmuArea(nextArea);
+                    final nextMaxLines =
+                        controller.estimateDanmuMaxVisibleLineCount(
+                      viewportHeight: effectiveViewportHeight,
+                      area: nextArea,
+                    );
+                    if (controller.danmuLineCount.value > nextMaxLines) {
+                      controller.setDanmuLineCount(nextMaxLines);
+                    }
+                    updatePreviewOption(area: nextArea);
+                  },
+                ),
+              ),
+              AppStyle.divider,
+              Obx(
+                () => Column(
+                  children: [
+                    SettingsMenu<int>(
+                      title: "显示几行",
+                      subtitle: "优先按这里显示，超过当前区域和字体能容纳的上限时自动收紧",
+                      value: controller.resolveDanmuTargetLineCount(
+                        viewportHeight: effectiveViewportHeight,
+                      ),
+                      valueMap: _buildDanmuLineValueMap(
+                        controller.estimateDanmuMaxVisibleLineCount(
+                          viewportHeight: effectiveViewportHeight,
+                        ),
+                      ),
+                      onChanged: (e) {
+                        controller.setDanmuLineCount(e);
+                        updatePreviewOption();
+                      },
+                    ),
+                    Padding(
+                      padding: AppStyle.edgeInsetsH16.copyWith(
+                        top: 4,
+                        bottom: 12,
+                      ),
+                      child: _buildDanmuLineHint(
+                        context,
+                        effectiveViewportHeight,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              AppStyle.divider,
+              // 动态设置 - 移到后面
               Obx(
                 () => SettingsSwitch(
                   title: "显示用户备注",
@@ -324,63 +383,6 @@ class DanmuSettingsView extends GetView<AppSettingsController> {
               AppStyle.divider,
               Obx(
                 () => SettingsNumber(
-                  title: "显示区域",
-                  value: (controller.danmuArea.value * 100).toInt(),
-                  min: 10,
-                  max: 100,
-                  step: 10,
-                  unit: "%",
-                  onChanged: (e) {
-                    final nextArea = e / 100.0;
-                    controller.setDanmuArea(nextArea);
-                    final nextMaxLines =
-                        controller.estimateDanmuMaxVisibleLineCount(
-                      viewportHeight: effectiveViewportHeight,
-                      area: nextArea,
-                    );
-                    if (controller.danmuLineCount.value > nextMaxLines) {
-                      controller.setDanmuLineCount(nextMaxLines);
-                    }
-                    updatePreviewOption(area: nextArea);
-                  },
-                ),
-              ),
-              AppStyle.divider,
-              Obx(
-                () => Column(
-                  children: [
-                    SettingsMenu<int>(
-                      title: "显示几行",
-                      subtitle: "优先按这里显示，超过当前区域和字体能容纳的上限时自动收紧",
-                      value: controller.resolveDanmuTargetLineCount(
-                        viewportHeight: effectiveViewportHeight,
-                      ),
-                      valueMap: _buildDanmuLineValueMap(
-                        controller.estimateDanmuMaxVisibleLineCount(
-                          viewportHeight: effectiveViewportHeight,
-                        ),
-                      ),
-                      onChanged: (e) {
-                        controller.setDanmuLineCount(e);
-                        updatePreviewOption();
-                      },
-                    ),
-                    Padding(
-                      padding: AppStyle.edgeInsetsH16.copyWith(
-                        top: 4,
-                        bottom: 12,
-                      ),
-                      child: _buildDanmuLineHint(
-                        context,
-                        effectiveViewportHeight,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              AppStyle.divider,
-              Obx(
-                () => SettingsNumber(
                   title: "不透明度",
                   value: (controller.danmuOpacity.value * 100).toInt(),
                   min: 10,
@@ -399,7 +401,7 @@ class DanmuSettingsView extends GetView<AppSettingsController> {
                   title: "字体大小",
                   value: controller.danmuSize.value.toInt(),
                   min: 8,
-                  max: 72,
+                  max: 144,
                   onChanged: (e) {
                     final nextFontSize = e.toDouble();
                     controller.setDanmuSize(nextFontSize);
@@ -446,7 +448,7 @@ class DanmuSettingsView extends GetView<AppSettingsController> {
                   title: "滚动速度",
                   subtitle: "弹幕持续时间（秒），越小速度越快",
                   value: controller.danmuSpeed.value.toInt(),
-                  min: 4,
+                  min: 1,
                   max: 20,
                   onChanged: (e) {
                     controller.setDanmuSpeed(e.toDouble());

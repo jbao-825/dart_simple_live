@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -13,6 +14,7 @@ import 'package:simple_live_tv_app/modules/settings/follow_update_interval_optio
 import 'package:simple_live_tv_app/services/bilibili_account_service.dart';
 import 'package:simple_live_tv_app/services/douyin_account_service.dart';
 import 'package:simple_live_tv_app/services/follow_user_service.dart';
+import 'package:simple_live_tv_app/services/kuaishou_account_service.dart';
 import 'package:simple_live_tv_app/services/mpv_options_service.dart';
 import 'package:simple_live_tv_app/services/signalr_service.dart';
 import 'package:simple_live_tv_app/widgets/app_scaffold.dart';
@@ -243,6 +245,21 @@ class SettingsPage extends GetView<SettingsController> {
         AppStyle.vGap24,
         Obx(
           () => SettingsItemWidget(
+            foucsNode: AppFocusNode(),
+            title: "遥控器OK键行为",
+            items: const {
+              AppSettingsController.kOkKeyActionShowControls: "显示/隐藏控制栏",
+              AppSettingsController.kOkKeyActionPlayPause: "暂停/继续",
+            },
+            value: AppSettingsController.instance.okKeyAction.value,
+            onChanged: (e) {
+              AppSettingsController.instance.setOkKeyAction(e);
+            },
+          ),
+        ),
+        AppStyle.vGap24,
+        Obx(
+          () => SettingsItemWidget(
             foucsNode: controller.scaleFoucsNode,
             autofocus: controller.scaleFoucsNode.isFoucsed.value,
             title: "画面比例",
@@ -269,6 +286,7 @@ class SettingsPage extends GetView<SettingsController> {
               0: "最低画质",
               1: "中等画质",
               2: "最高画质",
+              3: "记住上次画质",
             },
             value: AppSettingsController.instance.qualityLevel.value,
             onChanged: (e) {
@@ -286,7 +304,7 @@ class SettingsPage extends GetView<SettingsController> {
       padding: AppStyle.edgeInsetsA48,
       children: [
         Text(
-          "大量关注时，自动刷新会等待上一轮完成；可在关注页使用分页刷新。",
+          "关注刷新分为两种：定时刷新关注状态，以及进入关注页时立即刷新；两者可以分别开关。大量关注时，刷新会等待上一轮完成。",
           style: AppStyle.subTextStyleWhite,
         ),
         AppStyle.vGap24,
@@ -295,7 +313,7 @@ class SettingsPage extends GetView<SettingsController> {
             foucsNode: controller.autoUpdateFollowEnableFocusNode,
             autofocus:
                 controller.autoUpdateFollowEnableFocusNode.isFoucsed.value,
-            title: "自动更新关注",
+            title: "定时刷新关注状态",
             items: const {
               0: "关",
               1: "开",
@@ -307,6 +325,12 @@ class SettingsPage extends GetView<SettingsController> {
               AppSettingsController.instance
                   .setAutoUpdateFollowEnable(e == 1 ? true : false);
               FollowUserService.instance.initTimer();
+              if (e == 1) {
+                unawaited(
+                  FollowUserService.instance
+                      .refreshImmediatelyIfAutomaticEnabled(),
+                );
+              }
             },
           ),
         ),
@@ -368,7 +392,7 @@ class SettingsPage extends GetView<SettingsController> {
           focusNode: controller.autoUpdateFollowDurationFocusNode,
           autofocus:
               controller.autoUpdateFollowDurationFocusNode.isFoucsed.value,
-          title: "自动更新间隔",
+          title: "定时刷新间隔",
           subtitle: _formatFollowUpdateDuration(
             AppSettingsController.instance.autoUpdateFollowDuration.value,
           ),
@@ -387,7 +411,7 @@ class SettingsPage extends GetView<SettingsController> {
       return SettingsItemWidget(
         foucsNode: controller.autoUpdateFollowDurationFocusNode,
         autofocus: controller.autoUpdateFollowDurationFocusNode.isFoucsed.value,
-        title: "自动更新间隔",
+        title: "定时刷新间隔",
         items: FollowUpdateIntervalOptions.presetLabels,
         value: value,
         onChanged: (e) {
@@ -481,6 +505,9 @@ class SettingsPage extends GetView<SettingsController> {
               56.0: "56",
               64.0: "64",
               72.0: "72",
+              96.0: "96",
+              120.0: "120",
+              144.0: "144",
             },
             value: AppSettingsController.instance.danmuSize.value,
             onChanged: (e) {
@@ -502,6 +529,8 @@ class SettingsPage extends GetView<SettingsController> {
               8.0: "快",
               6.0: "较快",
               4.0: "很快",
+              2.0: "极速",
+              1.0: "最快",
             },
             value: AppSettingsController.instance.danmuSpeed.value,
             onChanged: (e) {
@@ -839,7 +868,23 @@ class SettingsPage extends GetView<SettingsController> {
             ),
             onTap: controller.douyinTap,
           ),
-        )
+        ),
+        AppStyle.vGap24,
+        Obx(
+          () => HighlightListTile(
+            focusNode: AppFocusNode(),
+            title: "快手账号",
+            subtitle: KuaishouAccountService.instance.hasCookie.value
+                ? "已配置 Cookie，可用于快手搜索和弹幕"
+                : "未配置 Cookie，部分搜索和弹幕可能受限",
+            leading: Image.asset(
+              "assets/images/kuaishou.png",
+              width: 64.w,
+              height: 64.w,
+            ),
+            onTap: controller.kuaishouTap,
+          ),
+        ),
       ],
     );
   }
@@ -859,7 +904,8 @@ class SettingsPage extends GetView<SettingsController> {
           HighlightListTile(
             focusNode: AppFocusNode(),
             title: "同步服务",
-            subtitle: SignalRService.configuredUrl,
+            subtitle:
+                "${SignalRService.configuredServerLabel}\n${SignalRService.configuredUrl}",
             onTap: controller.editSyncServerUrl,
           ),
           AppStyle.vGap24,

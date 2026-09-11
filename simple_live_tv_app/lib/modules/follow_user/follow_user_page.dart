@@ -10,7 +10,9 @@ import 'package:simple_live_tv_app/app/controller/app_settings_controller.dart';
 import 'package:simple_live_tv_app/app/sites.dart';
 import 'package:simple_live_tv_app/app/utils.dart';
 import 'package:simple_live_tv_app/routes/app_navigation.dart';
+import 'package:simple_live_tv_app/models/db/follow_user_tag.dart';
 import 'package:simple_live_tv_app/services/current_room_service.dart';
+import 'package:simple_live_tv_app/services/db_service.dart';
 import 'package:simple_live_tv_app/services/follow_user_service.dart';
 import 'package:simple_live_tv_app/widgets/app_scaffold.dart';
 import 'package:simple_live_tv_app/widgets/button/highlight_button.dart';
@@ -172,12 +174,21 @@ class _FollowUserPageState extends State<FollowUserPage> {
                   text: "显示/筛选",
                   onTap: _showDisplayDialog,
                 ),
-                const Spacer(),
+                AppStyle.hGap16,
                 HighlightButton(
                   focusNode: AppFocusNode(),
-                  iconData: Icons.sync,
-                  text: "刷新全部",
-                  onTap: FollowUserService.instance.refreshAllStatus,
+                  iconData: Icons.label_outline,
+                  text: "标签",
+                  onTap: _showTagDialog,
+                ),
+                const Spacer(),
+                Obx(
+                  () => HighlightButton(
+                    focusNode: AppFocusNode(),
+                    iconData: Icons.sync,
+                    text: FollowUserService.instance.refreshTagLabel,
+                    onTap: FollowUserService.instance.refreshAllStatus,
+                  ),
                 ),
                 AppStyle.hGap24,
                 AppStyle.hGap48,
@@ -277,8 +288,11 @@ class _FollowUserPageState extends State<FollowUserPage> {
     final settings = AppSettingsController.instance;
     final labels = <String>[
       "样式：${_displayStyleLabel(settings.followDisplayStyle.value)}",
+      if (FollowUserService.instance.selectedTagName.value !=
+          FollowUserService.allTagName)
+        "标签：${FollowUserService.instance.selectedTagName.value}",
       if (settings.followOnlyLive.value) "仅显示开播",
-      if (settings.followRefreshOnEnter.value) "进页自动刷新",
+      if (settings.followRefreshOnEnter.value) "进页刷新",
       if (FollowUserService.instance.searchKeyword.value.isNotEmpty)
         "搜索：${FollowUserService.instance.searchKeyword.value}",
     ];
@@ -347,6 +361,135 @@ class _FollowUserPageState extends State<FollowUserPage> {
     FollowUserService.instance.setSearchKeyword(result);
   }
 
+  void _showTagDialog() {
+    Utils.showSystemRightDialog(
+      width: 760.w,
+      child: Obx(
+        () => ListView(
+          padding: AppStyle.edgeInsetsA24,
+          children: [
+            Text("关注标签", style: AppStyle.titleStyleWhite),
+            AppStyle.vGap24,
+            Wrap(
+              spacing: 16.w,
+              runSpacing: 16.w,
+              children: FollowUserService.instance.tagOptions
+                  .map(
+                    (tag) => HighlightButton(
+                      focusNode: AppFocusNode(),
+                      iconData: tag == FollowUserService.allTagName
+                          ? Icons.all_inclusive
+                          : Icons.label_outline,
+                      text: tag,
+                      selected:
+                          FollowUserService.instance.selectedTagName.value ==
+                              tag,
+                      onTap: () {
+                        FollowUserService.instance.setSelectedTagName(tag);
+                        Get.back();
+                      },
+                    ),
+                  )
+                  .toList(),
+            ),
+            AppStyle.vGap24,
+            Text("标签管理", style: AppStyle.titleStyleWhite.copyWith(fontSize: 26.w)),
+            AppStyle.vGap16,
+            Wrap(
+              spacing: 16.w,
+              runSpacing: 16.w,
+              children: [
+                HighlightButton(
+                  focusNode: AppFocusNode(),
+                  iconData: Icons.add,
+                  text: "新增标签",
+                  onTap: _showAddTagDialog,
+                ),
+              ],
+            ),
+            AppStyle.vGap16,
+            ...FollowUserService.instance.followTagList
+                .map((tag) => _buildTagManageRow(tag))
+                .toList(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTagManageRow(FollowUserTag tag) {
+    return Padding(
+      padding: EdgeInsets.only(bottom: 12.w),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              "${tag.tag}（${tag.userId.length}）",
+              style: AppStyle.textStyleWhite,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          HighlightButton(
+            focusNode: AppFocusNode(),
+            iconData: Icons.edit,
+            text: "改名",
+            onTap: () => _showRenameTagDialog(tag),
+          ),
+          AppStyle.hGap12,
+          HighlightButton(
+            focusNode: AppFocusNode(),
+            iconData: Icons.delete_outline,
+            text: "删除",
+            onTap: () => _showDeleteTagDialog(tag),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showAddTagDialog() async {
+    final result = await Utils.showEditTextDialog(
+      "",
+      title: "新增标签",
+      hintText: "最多${DBService.followTagMaxLength}个字符",
+      confirm: "添加",
+      validate: (e) => e.trim().length <= DBService.followTagMaxLength,
+    );
+    if (result == null) {
+      return;
+    }
+    await FollowUserService.instance.addTag(result);
+  }
+
+  Future<void> _showRenameTagDialog(FollowUserTag tag) async {
+    final result = await Utils.showEditTextDialog(
+      tag.tag,
+      title: "修改标签名",
+      hintText: "最多${DBService.followTagMaxLength}个字符",
+      confirm: "确定",
+      validate: (e) => e.trim().length <= DBService.followTagMaxLength,
+    );
+    if (result == null) {
+      return;
+    }
+    await FollowUserService.instance.renameTag(tag, result);
+    Get.back();
+    _showTagDialog();
+  }
+
+  Future<void> _showDeleteTagDialog(FollowUserTag tag) async {
+    final result = await Utils.showAlertDialog(
+      "确定删除标签“${tag.tag}”吗？\n该标签下的关注将移回“${FollowUserService.allTagName}”。",
+      title: "删除标签",
+    );
+    if (!result) {
+      return;
+    }
+    await FollowUserService.instance.deleteTag(tag);
+    Get.back();
+    _showTagDialog();
+  }
+
   void _showDisplayDialog() {
     Utils.showSystemRightDialog(
       width: 760.w,
@@ -411,25 +554,25 @@ class _FollowUserPageState extends State<FollowUserPage> {
             ),
             AppStyle.vGap32,
             Text(
-              "自动刷新",
+              "进入关注页时刷新",
               style: AppStyle.titleStyleWhite.copyWith(fontSize: 26.w),
             ),
             AppStyle.vGap16,
             Text(
-              "开启后，进入关注页会先显示本地列表，再异步发起一次全量刷新。关注过多时，极其容易触发抖音限制。",
+              "这是进页刷新，不是定时刷新。开启后，每次进入关注页会先显示本地列表，再异步刷新一次关注状态；关注过多时可能触发抖音限制。",
               style: AppStyle.subTextStyleWhite,
             ),
             AppStyle.vGap16,
             _buildToggleButton(
               label: AppSettingsController.instance.followRefreshOnEnter.value
-                  ? "进入关注页后自动刷新：开"
-                  : "进入关注页后自动刷新：关",
+                  ? "进入关注页时刷新：开"
+                  : "进入关注页时刷新：关",
               onTap: () async {
                 final current =
                     AppSettingsController.instance.followRefreshOnEnter.value;
                 if (!current) {
                   final confirmed = await Utils.showAlertDialog(
-                    "开启后，每次进入关注页都会先显示本地列表，再异步发起一次全量刷新。关注过多时，极其容易触发抖音限制。",
+                    "这是进页刷新，不是十分钟定时刷新。开启后，每次进入关注页都会先显示本地列表，再异步刷新一次关注状态；关注过多时可能触发抖音限制。",
                     title: "风险提示",
                     confirm: "继续开启",
                   );

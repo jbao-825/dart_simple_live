@@ -22,6 +22,11 @@ class LocalStorageService extends GetxService {
       "LiveRoomShortcutToggleChat";
   static const String kDesktopLiveRoomSidePanelRatio =
       "DesktopLiveRoomSidePanelRatio";
+  static const String kLiveRoomShortcutVolumeUp = "LiveRoomShortcutVolumeUp";
+  static const String kLiveRoomShortcutVolumeDown =
+      "LiveRoomShortcutVolumeDown";
+  static const String kLiveRoomShortcutPlayPause =
+      "LiveRoomShortcutPlayPause";
   static const String kLastSearchSiteId = "LastSearchSiteId";
   static const String kFollowGroupMode = "FollowGroupMode";
   static const String kFollowSelectedGroupId = "FollowSelectedGroupId";
@@ -57,11 +62,14 @@ class LocalStorageService extends GetxService {
   static const String kDanmuShowRemarkEnable = "DanmuShowRemarkEnable";
   static const String kContributionRankEnable = "ContributionRankEnable";
   static const String kHardwareDecode = "HardwareDecode";
+  static const String kIosOriginalQualityPowerSaving =
+      "IosOriginalQualityPowerSaving";
   static const String kChatTextSize = "ChatTextSize";
   static const String kChatTextGap = "ChatTextGap";
   static const String kChatBubbleStyle = "ChatBubbleStyle";
   static const String kQualityLevel = "QualityLevel";
   static const String kQualityLevelCellular = "QualityLevelCellular";
+  static const String kQualityMemory = "QualityMemory";
   static const String kAutoExitEnable = "AutoExitEnable";
   static const String kAutoExitDuration = "AutoExitDuration";
   static const String kRoomAutoExitDuration = "RoomAutoExitDuration";
@@ -111,6 +119,7 @@ class LocalStorageService extends GetxService {
   static const String kCustomPlayerOutput = "CustomPlayerOutput";
   static const String kVideoOutputDriver = "VideoOutputDriver";
   static const String kVideoHardwareDecoder = "VideoHardwareDecoder";
+  static const String kWindowsGpuPreference = "WindowsGpuPreference";
   static const String kAudioOutputDriver = "AudioOutputDriver";
   static const String kMpvProfile = "MpvProfile";
   static const String kMpvAdvancedOptions = "MpvAdvancedOptions";
@@ -145,6 +154,18 @@ class LocalStorageService extends GetxService {
   static const String kLiveSubtitlePositionLocked =
       "LiveSubtitlePositionLocked";
   static const String kLiveSubtitleStartupGuard = "LiveSubtitleStartupGuard";
+
+  // 小窗弹幕设置
+  static const String kSmallWindowDanmuScale = "SmallWindowDanmuScale";
+  static const String kSmallWindowDanmuMaxLines = "SmallWindowDanmuMaxLines";
+  static const String kSmallWindowDanmuAutoTransparent = "SmallWindowDanmuAutoTransparent";
+
+  // PIP弹幕设置
+  static const String kEnablePipDanmu = "EnablePipDanmu";
+  static const String kPipDanmuScale = "PipDanmuScale";
+
+  // SuperChat 全屏滚动
+  static const String kSuperChatScrollInFullscreen = "SuperChatScrollInFullscreen";
 
   late Box settingsBox;
   late Box<String> shieldBox;

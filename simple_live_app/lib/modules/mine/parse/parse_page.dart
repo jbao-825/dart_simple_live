@@ -107,6 +107,8 @@ https://www.douyu.com/topic/xxx?rid=xxx
 抖音直播：
 https://v.douyin.com/xxxxx
 https://live.douyin.com/xxxxx
+https://www.douyin.com/live/xxxxx
+https://www.douyin.com/follow/live/xxxxx
 https://webcast.amemv.com/webcast/reflow/xxxxx
 快手直播：
 https://live.kuaishou.com/u/xxxxx

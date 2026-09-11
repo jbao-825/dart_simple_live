@@ -205,9 +205,11 @@ class BulkDataImportService {
       var tag = tagMap[tagName];
       if (tag == null) {
         tag = await DBService.instance.addFollowTag(tagName);
-        tagMap[tagName] = tag;
+        if (tag != null) {
+          tagMap[tagName] = tag;
+        }
       }
-      if (!tag.userId.contains(follow.id)) {
+      if (tag != null && !tag.userId.contains(follow.id)) {
         tag.userId.add(follow.id);
       }
       await yieldIfNeeded(policy, processed);

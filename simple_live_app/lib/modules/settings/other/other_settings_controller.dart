@@ -18,7 +18,6 @@ import 'package:simple_live_app/services/live_subtitle_service.dart';
 import 'package:simple_live_app/services/local_storage_service.dart';
 import 'package:simple_live_app/services/mpv_options_service.dart';
 import 'package:simple_live_app/services/profile_backup_service.dart';
-import 'package:simple_live_app/services/signalr_service.dart';
 import 'package:simple_live_app/widgets/sync_progress_dialog.dart';
 import 'package:simple_live_core/simple_live_core.dart';
 
@@ -340,83 +339,6 @@ class OtherSettingsController extends BaseController {
         SmartDialog.showToast("重置成功,重启生效");
       }
     });
-  }
-
-  String get syncServerUrl => SignalRService.configuredUrl;
-  String get syncServerUrlLabel {
-    final configured = SignalRService.configuredUrl;
-    final isDefault = configured == SignalRService.kDefaultUrl;
-    final host = Uri.tryParse(configured)?.host ?? "";
-    if (host.isEmpty) {
-      return isDefault ? "默认服务" : "自定义服务";
-    }
-    return isDefault ? "默认服务" : "自定义: $host";
-  }
-
-  String get syncServerUrlSubtitle {
-    final configured = SignalRService.configuredUrl;
-    final isDefault = configured == SignalRService.kDefaultUrl;
-    return isDefault ? "远程同步使用默认 WebSocket 服务" : configured;
-  }
-
-  String get syncProxyUrl => SignalRService.proxyDisplayName;
-
-  void editSyncServerUrl() async {
-    var value = await Utils.showEditTextDialog(
-      SignalRService.configuredUrl,
-      title: "同步服务地址",
-      hintText: SignalRService.kDefaultUrl,
-      validate: (text) {
-        final url = text.trim();
-        if (url.isEmpty) {
-          return true;
-        }
-        final uri = Uri.tryParse(url);
-        if (uri == null ||
-            !(uri.scheme == "wss" || uri.scheme == "ws") ||
-            uri.host.isEmpty) {
-          SmartDialog.showToast("请输入 ws:// 或 wss:// 开头的同步服务地址");
-          return false;
-        }
-        return true;
-      },
-    );
-    if (value == null) {
-      return;
-    }
-    await SignalRService.setConfiguredUrl(value);
-    SmartDialog.showToast(value.trim().isEmpty ? "已恢复默认同步服务" : "已保存");
-    update();
-  }
-
-  void resetSyncServerUrl() async {
-    await SignalRService.setConfiguredUrl("");
-    SmartDialog.showToast("已恢复默认同步服务");
-    update();
-  }
-
-  void editSyncProxyUrl() async {
-    var value = await Utils.showEditTextDialog(
-      SignalRService.configuredProxyUrl,
-      title: "同步代理地址",
-      hintText: "留空自动检测 ${SignalRService.kDefaultLocalProxy}",
-      validate: (text) {
-        final value = text.trim();
-        if (!SignalRService.isValidProxyConfig(value)) {
-          SmartDialog.showToast(
-            "请输入 host:port、http://host:port，或 direct 直连",
-          );
-          return false;
-        }
-        return true;
-      },
-    );
-    if (value == null) {
-      return;
-    }
-    await SignalRService.setConfiguredProxyUrl(value);
-    SmartDialog.showToast(value.trim().isEmpty ? "已恢复自动检测代理" : "已保存");
-    update();
   }
 
   Future<void> editMpvAdvancedOptions() async {

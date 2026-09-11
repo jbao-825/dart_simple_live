@@ -94,11 +94,14 @@ class LocalStorageService extends GetxService {
   /// 聊天区-气泡样式
   static const String kChatBubbleStyle = "ChatBubbleStyle";
 
-  /// 播放清晰度，0=低，1=中，2=高
+  /// 播放清晰度，0=低，1=中，2=高，3=记住上次
   static const String kQualityLevel = "QualityLevel";
 
-  /// 蜂窝网络下播放清晰度，0=低，1=中，2=高
+  /// 蜂窝网络下播放清晰度，0=低，1=中，2=高，3=记住上次
   static const String kQualityLevelCellular = "QualityLevelCellular";
+
+  /// 清晰度记忆：Map<siteId, {name, offset}>
+  static const String kQualityMemory = "QualityMemory";
 
   /// 开启定时关闭
   static const String kAutoExitEnable = "AutoExitEnable";
@@ -115,6 +118,9 @@ class LocalStorageService extends GetxService {
 
   /// 播放器后台自动暂停
   static const String kPlayerAutoPause = "PlayerAutoPause";
+
+  /// 遥控器OK键行为：0=显示/隐藏控制栏（默认） 1=暂停/继续
+  static const String kOkKeyAction = "OkKeyAction";
 
   /// 播放器缓冲区大小
   static const String kPlayerBufferSize = "PlayerBufferSize";
@@ -137,6 +143,11 @@ class LocalStorageService extends GetxService {
 
   /// 抖音cookie
   static const String kDouyinCookie = "DouyinCookie";
+
+  /// 快手 Cookie 与弹幕签名参数
+  static const String kKuaishouCookie = "KuaishouCookie";
+  static const String kKuaishouKww = "KuaishouKww";
+  static const String kKuaishouCookieExpiresAt = "KuaishouCookieExpiresAt";
 
   ///主题色
   static const String kStyleColor = "kStyleColor";

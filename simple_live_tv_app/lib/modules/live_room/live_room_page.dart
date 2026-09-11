@@ -50,11 +50,30 @@ class LiveRoomPage extends GetView<LiveRoomController> {
       requestExitPlayer();
       return;
     }
-    // 点击OK、Enter、Select键时显示/隐藏控制器
+    // 遥控器媒体键：播放/暂停
+    if (key.logicalKey == LogicalKeyboardKey.mediaPlayPause) {
+      controller.togglePlayPause();
+      return;
+    }
+    if (key.logicalKey == LogicalKeyboardKey.mediaPlay) {
+      if (controller.userPaused.value) {
+        controller.togglePlayPause();
+      }
+      return;
+    }
+    if (key.logicalKey == LogicalKeyboardKey.mediaPause) {
+      if (!controller.userPaused.value) {
+        controller.togglePlayPause();
+      }
+      return;
+    }
+    // 点击OK、Enter、Select键：按"OK键行为"设置触发暂停/继续或显示/隐藏控制栏
     if (key.logicalKey == LogicalKeyboardKey.select ||
         key.logicalKey == LogicalKeyboardKey.enter ||
         key.logicalKey == LogicalKeyboardKey.space) {
-      if (!controller.showControlsState.value) {
+      if (AppSettingsController.instance.okKeyTriggersPlayPause) {
+        controller.togglePlayPause();
+      } else if (!controller.showControlsState.value) {
         controller.showControls();
       } else {
         controller.hideControls();
@@ -153,6 +172,43 @@ class LiveRoomPage extends GetView<LiveRoomController> {
           },
           aspectRatio: aspectRatio,
           fit: boxFit,
+        ),
+        // 暂停状态提示
+        Obx(
+          () => Visibility(
+            visible: controller.userPaused.value &&
+                !controller.pageLoadding.value &&
+                controller.playbackLoadError.value.isEmpty,
+            child: Center(
+              child: Container(
+                padding: AppStyle.edgeInsetsA24,
+                decoration: BoxDecoration(
+                  color: Colors.black54,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.pause_circle_outline,
+                      color: Colors.white,
+                      size: 64,
+                    ),
+                    AppStyle.vGap12,
+                    Obx(
+                      () => Text(
+                        AppSettingsController
+                                .instance.okKeyTriggersPlayPause
+                            ? "已暂停 · 按OK键或播放键继续"
+                            : "已暂停 · 按播放键继续",
+                        style: AppStyle.textStyleWhite,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
         ),
         Obx(
           () => Visibility(

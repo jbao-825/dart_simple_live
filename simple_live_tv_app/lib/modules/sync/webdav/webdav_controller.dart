@@ -18,6 +18,7 @@ import 'package:simple_live_tv_app/modules/sync/webdav/webdav_client.dart';
 import 'package:simple_live_tv_app/services/bilibili_account_service.dart';
 import 'package:simple_live_tv_app/services/bulk_data_import_service.dart';
 import 'package:simple_live_tv_app/services/douyin_account_service.dart';
+import 'package:simple_live_tv_app/services/kuaishou_account_service.dart';
 import 'package:simple_live_tv_app/services/local_storage_service.dart';
 import 'package:simple_live_tv_app/services/profile_backup_service.dart';
 import 'package:simple_live_tv_app/widgets/sync_progress_dialog.dart';
@@ -28,6 +29,7 @@ class WebDavController extends BaseController {
   final isSyncBlockWord = true.obs;
   final isSyncBilibiliAccount = true.obs;
   final isSyncDouyinAccount = true.obs;
+  final isSyncKuaishouAccount = true.obs;
   final passwordVisible = true.obs;
   final user = "--".obs;
   final lastRecoverTime = "--".obs;
@@ -36,10 +38,12 @@ class WebDavController extends BaseController {
   late DAVClient davClient;
 
   final _userFollowJsonName = 'SimpleLive_follows.json';
+  final _userFollowTagsJsonName = 'SimpleLive_follow_tags.json';
   final _userHistoriesJsonName = 'SimpleLive_histories.json';
   final _userBlockedWordJsonName = 'SimpleLive_blocked_word.json';
   final _userBilibiliAccountJsonName = 'SimpleLive_bilibili_account.json';
   final _userDouyinAccountJsonName = 'SimpleLive_douyin_account.json';
+  final _userKuaishouAccountJsonName = 'SimpleLive_kuaishou_account.json';
   final _userSettingsJsonName = 'SimpleLive_Settings.json';
   final _profileJsonName = 'SimpleLive_Profile_v3.json';
   final _legacyProfileJsonName = 'SimpleLive_Profile_v2.json';
@@ -185,6 +189,9 @@ class WebDavController extends BaseController {
     _addJsonFile(archive, _userFollowJsonName, {
       'data': profileMap['followUsers'] ?? const [],
     });
+    _addJsonFile(archive, _userFollowTagsJsonName, {
+      'data': profileMap['followUserTags'] ?? const [],
+    });
     _addJsonFile(archive, _userHistoriesJsonName, {
       'data': profileMap['histories'] ?? const [],
     });
@@ -198,6 +205,14 @@ class WebDavController extends BaseController {
     });
     _addJsonFile(archive, _userDouyinAccountJsonName, {
       'data': {'cookie': DouyinAccountService.instance.cookie},
+    });
+    _addJsonFile(archive, _userKuaishouAccountJsonName, {
+      'data': {
+        'cookie': KuaishouAccountService.instance.cookie,
+        'kww': KuaishouAccountService.instance.kww,
+        'cookieExpiresAt':
+            KuaishouAccountService.instance.cookieExpiresAtMs.value,
+      },
     });
     _addJsonFile(archive, _userSettingsJsonName, {
       'data': LocalStorageService.instance.settingsBox.toMap(),
@@ -291,6 +306,20 @@ class WebDavController extends BaseController {
       );
       EventBus.instance.emit(Constant.kUpdateFollow, 0);
       Log.i('已恢复关注用户列表：${result.logSummary}');
+    } else if (file.name == _userFollowTagsJsonName && isSyncFollows.value) {
+      final summary = await ProfileBackupService.instance.importProfileJson(
+        utf8.decode(file.content),
+        overwrite: true,
+        options: const ProfileImportOptions(
+          settings: false,
+          shields: false,
+          follows: true,
+          histories: false,
+        ),
+        onProgress: SyncProgressDialog.update,
+      );
+      EventBus.instance.emit(Constant.kUpdateFollow, 0);
+      Log.i('已恢复关注标签：${summary.message}');
     } else if (file.name == _userHistoriesJsonName && isSyncHistories.value) {
       final result = await BulkDataImportService.importHistories(
         jsonData,
@@ -323,11 +352,35 @@ class WebDavController extends BaseController {
         DouyinAccountService.instance.setCookie(cookie);
       }
       Log.i('已恢复抖音账号');
+    } else if (file.name == _userKuaishouAccountJsonName &&
+        isSyncKuaishouAccount.value) {
+      final cookie =
+          jsonData is Map ? jsonData['cookie']?.toString() ?? '' : '';
+      final kww = jsonData is Map ? jsonData['kww']?.toString() ?? '' : '';
+      final expiresAtMs = jsonData is Map
+          ? (jsonData['cookieExpiresAt'] as num?)?.toInt() ?? 0
+          : 0;
+      if (cookie.isEmpty) {
+        KuaishouAccountService.instance.clearCookie();
+      } else {
+        KuaishouAccountService.instance.setCookie(
+          cookie,
+          kww: kww.isEmpty ? null : kww,
+          expiresAt: expiresAtMs > 0
+              ? DateTime.fromMillisecondsSinceEpoch(expiresAtMs)
+              : null,
+        );
+      }
+      Log.i('已恢复快手账号');
     }
   }
 
   void changeIsSyncDouyinAccount() {
     isSyncDouyinAccount.value = !isSyncDouyinAccount.value;
+  }
+
+  void changeIsSyncKuaishouAccount() {
+    isSyncKuaishouAccount.value = !isSyncKuaishouAccount.value;
   }
 }
 

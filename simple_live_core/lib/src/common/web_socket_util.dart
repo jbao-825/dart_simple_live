@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io' as io;
+import 'dart:math';
 
 import 'package:web_socket_channel/io.dart';
 
@@ -39,6 +40,19 @@ class WebScoketUtils {
 
   /// 请求头
   Map<String, dynamic>? headers;
+
+  /// 单个候选地址的连接超时时间。
+  final Duration connectTimeout;
+
+  /// 是否随机化候选地址顺序。
+  final bool shuffleUrls;
+
+  /// 每轮最多尝试的候选地址数量，null 表示全部尝试。
+  final int? maxConnectAttempts;
+
+  /// 连接断开后的重连间隔。
+  final Duration reconnectDelay;
+
   WebScoketUtils({
     required this.url,
     required this.heartBeatTime,
@@ -50,6 +64,10 @@ class WebScoketUtils {
     this.headers,
     this.backupUrl,
     this.backupUrls = const [],
+    this.connectTimeout = const Duration(seconds: 10),
+    this.shuffleUrls = false,
+    this.maxConnectAttempts,
+    this.reconnectDelay = const Duration(seconds: 5),
   });
   IOWebSocketChannel? webSocket;
   Timer? heartBeatTimer;
@@ -65,6 +83,8 @@ class WebScoketUtils {
 
   /// 走代理时持有的 HttpClient，连接关闭时一并释放，避免泄漏
   io.HttpClient? _proxyClient;
+  bool _manualClosed = true;
+  bool _connecting = false;
 
   List<String> get _connectUrls {
     final urls = <String>[url];
@@ -75,43 +95,86 @@ class WebScoketUtils {
     return urls.toSet().toList();
   }
 
+  /// Exposes the de-duplicated candidate order for diagnostics and tests.
+  List<String> get connectUrls => List.unmodifiable(_connectUrls);
+
   void connect({bool retry = false}) async {
-    close();
-    final urls = retry ? _connectUrls.skip(1).toList() : _connectUrls;
+    if (_connecting) {
+      return;
+    }
+    _manualClosed = false;
+    reconnectTimer?.cancel();
+    reconnectTimer = null;
+    _connecting = true;
+    streamSubscription?.cancel();
+    streamSubscription = null;
+    heartBeatTimer?.cancel();
+    heartBeatTimer = null;
+    try {
+      await webSocket?.sink.close();
+    } catch (_) {}
+    webSocket = null;
+    final urls = _connectUrls.toList();
+    if (shuffleUrls) {
+      urls.shuffle(Random());
+    }
+    final candidates = retry && urls.length > 1 ? urls.skip(1).toList() : urls;
+    final limitedUrls = maxConnectAttempts == null
+        ? candidates
+        : candidates.take(maxConnectAttempts!).toList();
     Object? lastError;
     StackTrace? lastStackTrace;
-    for (final wsurl in urls) {
-      io.HttpClient? proxyClient;
-      try {
-        // 与 HTTP 请求共用同一套代理判定：仅 B 站域名且已启用代理时走代理
-        final proxy = HttpClient.resolveProxy(Uri.parse(wsurl).host);
-        if (proxy != null) {
-          proxyClient = io.HttpClient();
-          proxyClient.findProxy = (_) => "PROXY $proxy";
+    try {
+      for (final wsurl in limitedUrls) {
+        if (_manualClosed) {
+          return;
         }
-        final socket = await io.WebSocket.connect(
-          wsurl,
-          headers: headers,
-          customClient: proxyClient,
-        ).timeout(const Duration(seconds: 10));
-        webSocket = IOWebSocketChannel(socket);
-        _proxyClient = proxyClient;
-        ready();
-        return;
-      } catch (e, s) {
-        lastError = e;
-        lastStackTrace = s;
-        webSocket?.sink.close();
-        webSocket = null;
-        proxyClient?.close(force: true);
+        io.HttpClient? proxyClient;
+        try {
+          // 与 HTTP 请求共用同一套代理判定：仅 B 站域名且已启用代理时走代理
+          final proxy = HttpClient.resolveProxy(Uri.parse(wsurl).host);
+          if (proxy != null) {
+            proxyClient = io.HttpClient();
+            proxyClient.findProxy = (_) => "PROXY $proxy";
+          }
+          final socket = await io.WebSocket.connect(
+            wsurl,
+            headers: headers,
+            customClient: proxyClient,
+          ).timeout(connectTimeout);
+          // 等待连接期间若已被手动关闭，释放刚建立的连接并退出
+          if (_manualClosed) {
+            await socket.close();
+            proxyClient?.close(force: true);
+            return;
+          }
+          webSocket = IOWebSocketChannel(socket);
+          _proxyClient = proxyClient;
+          ready();
+          return;
+        } catch (e, s) {
+          lastError = e;
+          lastStackTrace = s;
+          try {
+            await webSocket?.sink.close();
+          } catch (_) {}
+          webSocket = null;
+          proxyClient?.close(force: true);
+        }
       }
+      if (!_manualClosed) {
+        onError(lastError ?? "WebSocket connection failed", lastStackTrace);
+      }
+    } finally {
+      _connecting = false;
     }
-    onError(lastError ?? "WebSocket connection failed", lastStackTrace);
   }
 
   /// 连接完成
   void ready() {
     status = SocketStatus.connected;
+
+    heartBeatTimer?.cancel();
 
     streamSubscription = webSocket?.stream.listen(
       (data) => receiveMessage(data),
@@ -157,6 +220,7 @@ class WebScoketUtils {
   }
 
   void close() {
+    _manualClosed = true;
     status = SocketStatus.closed;
 
     streamSubscription?.cancel();
@@ -174,10 +238,14 @@ class WebScoketUtils {
   }
 
   void reconnect() {
+    if (_manualClosed || reconnectTimer != null) {
+      return;
+    }
     status = SocketStatus.closed;
     if (reconnectTime < maxReconnectTime) {
       reconnectTime++;
-      reconnectTimer ??= Timer.periodic(Duration(seconds: 5), (timer) {
+      reconnectTimer = Timer(reconnectDelay, () {
+        reconnectTimer = null;
         connect();
       });
     } else {

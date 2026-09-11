@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_smart_dialog/flutter_smart_dialog.dart';
 import 'package:get/get.dart';
 import 'package:remixicon/remixicon.dart';
 import 'package:simple_live_app/app/app_style.dart';
@@ -76,6 +77,31 @@ class OtherSettingsPage extends GetView<OtherSettingsController> {
                 ),
               ),
             ),
+            if (Platform.isWindows) ...[
+              Padding(
+                padding: AppStyle.edgeInsetsA12.copyWith(top: 16),
+                child: Text(
+                  "图形处理器",
+                  style: Get.textTheme.titleSmall,
+                ),
+              ),
+              SettingsCard(
+                child: Obx(
+                  () => SettingsMenu<String>(
+                    title: "Windows GPU 偏好",
+                    subtitle: "选择高性能/NVIDIA 可减少游戏本误用核显；修改后必须完全重启应用",
+                    value: AppSettingsController
+                        .instance.windowsGpuPreference.value,
+                    valueMap: AppSettingsController.windowsGpuPreferenceOptions,
+                    onChanged: (value) {
+                      AppSettingsController.instance
+                          .setWindowsGpuPreference(value);
+                      SmartDialog.showToast("GPU 偏好已保存，重启应用后生效");
+                    },
+                  ),
+                ),
+              ),
+            ],
           ],
           Padding(
             padding: AppStyle.edgeInsetsA12.copyWith(top: 24),
@@ -155,28 +181,12 @@ class OtherSettingsPage extends GetView<OtherSettingsController> {
           SettingsCard(
             child: Column(
               children: [
-                GetBuilder<OtherSettingsController>(
-                  builder: (controller) => SettingsAction(
-                    title: "同步服务地址",
-                    subtitle: controller.syncServerUrlSubtitle,
-                    value: controller.syncServerUrlLabel,
-                    onTap: controller.editSyncServerUrl,
-                  ),
-                ),
-                AppStyle.divider,
-                GetBuilder<OtherSettingsController>(
-                  builder: (controller) => SettingsAction(
-                    title: "同步代理地址",
-                    subtitle: "默认自动检测本机 127.0.0.1:51888；需要直连可填写 direct",
-                    value: controller.syncProxyUrl,
-                    onTap: controller.editSyncProxyUrl,
-                  ),
-                ),
-                AppStyle.divider,
                 Obx(
                   () => SettingsMenu(
-                    title: "mpv 性能档位",
-                    subtitle: "流畅适合核显/低功耗，均衡为默认，画质适合高性能显卡",
+                    title: Platform.isIOS ? "mpv 性能档位（桌面端）" : "mpv 性能档位",
+                    subtitle: Platform.isIOS
+                        ? "iOS 仅使用其中的自动硬解设置，不影响画质与功耗"
+                        : "流畅适合核显/低功耗，均衡为默认，画质适合高性能显卡",
                     value: AppSettingsController.instance.mpvProfile.value,
                     valueMap: MpvOptionsService.profileLabels,
                     onChanged: (e) {

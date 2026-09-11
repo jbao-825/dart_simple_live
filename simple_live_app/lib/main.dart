@@ -44,6 +44,21 @@ import 'package:path/path.dart' as p;
 import 'package:dynamic_color/dynamic_color.dart';
 
 void main(List<String> args) async {
+  // 捕获 Flutter 框架错误
+  FlutterError.onError = (FlutterErrorDetails details) {
+    FlutterError.presentError(details);
+    Log.e(
+      "Flutter Error: ${details.exception}",
+      details.stack ?? StackTrace.current,
+    );
+  };
+
+  // 捕获异步错误
+  PlatformDispatcher.instance.onError = (error, stack) {
+    Log.e("Async Error: $error", stack);
+    return true;
+  };
+
   WidgetsFlutterBinding.ensureInitialized();
   DesktopStartupArgs.initialize(args);
   await migrateData();
@@ -188,7 +203,10 @@ Future initWindow() async {
   await windowManager.ensureInitialized();
   Log.i("桌面窗口初始化");
   WindowOptions windowOptions = const WindowOptions(
-    minimumSize: Size(280, 280),
+    minimumSize: Size(
+      DesktopStartupArgs.minWindowWidth,
+      DesktopStartupArgs.minWindowHeight,
+    ),
     title: "Simple Live",
   );
   await windowManager.waitUntilReadyToShow(windowOptions);
@@ -269,14 +287,30 @@ class _DesktopWindowLifecycle with WindowListener {
       if (!displayRect.contains(bounds.center)) {
         continue;
       }
-      final width = bounds.width.clamp(280.0, displayRect.width).toDouble();
-      final height = bounds.height.clamp(280.0, displayRect.height).toDouble();
-      final left = bounds.left
-          .clamp(displayRect.left, displayRect.right - width)
+      final width = bounds.width
+          .clamp(DesktopStartupArgs.minWindowWidth, displayRect.width)
           .toDouble();
-      final top = bounds.top
-          .clamp(displayRect.top, displayRect.bottom - height)
+      final height = bounds.height
+          .clamp(DesktopStartupArgs.minWindowHeight, displayRect.height)
           .toDouble();
+
+      // Windows DWM may report edge-snapped frames a few pixels outside the
+      // visible work area (commonly around -7/-8). Keep that relative overhang
+      // so restoring an edge-snapped window does not leave an 8px gap.
+      const maxDwmOverhang = 16.0;
+      final minLeft =
+          displayRect.left - (Platform.isWindows ? maxDwmOverhang : 0.0);
+      final maxLeft = displayRect.right -
+          width +
+          (Platform.isWindows ? maxDwmOverhang : 0.0);
+      final minTop =
+          displayRect.top - (Platform.isWindows ? maxDwmOverhang : 0.0);
+      final maxTop = displayRect.bottom -
+          height +
+          (Platform.isWindows ? maxDwmOverhang : 0.0);
+
+      final left = bounds.left.clamp(minLeft, maxLeft).toDouble();
+      final top = bounds.top.clamp(minTop, maxTop).toDouble();
       return Rect.fromLTWH(left, top, width, height);
     }
     return null;
@@ -758,6 +792,15 @@ class MyApp extends StatelessWidget {
       if (shortcut == LogicalKeyboardKey.keyN.keyId) {
         return physicalKey == PhysicalKeyboardKey.keyN;
       }
+      if (shortcut == LogicalKeyboardKey.arrowUp.keyId) {
+        return physicalKey == PhysicalKeyboardKey.arrowUp;
+      }
+      if (shortcut == LogicalKeyboardKey.arrowDown.keyId) {
+        return physicalKey == PhysicalKeyboardKey.arrowDown;
+      }
+      if (shortcut == LogicalKeyboardKey.space.keyId) {
+        return physicalKey == PhysicalKeyboardKey.space;
+      }
       return false;
     }
 
@@ -773,8 +816,22 @@ class MyApp extends StatelessWidget {
       await liveRoomController.toggleMute();
       return;
     }
+    if (_isDesktopPlatform &&
+        matches(settings.liveRoomShortcutVolumeUp.value)) {
+      await liveRoomController.adjustDesktopPlayerVolume(5);
+      return;
+    }
+    if (_isDesktopPlatform &&
+        matches(settings.liveRoomShortcutVolumeDown.value)) {
+      await liveRoomController.adjustDesktopPlayerVolume(-5);
+      return;
+    }
     if (matches(settings.liveRoomShortcutRefresh.value)) {
       liveRoomController.refreshRoom();
+      return;
+    }
+    if (matches(settings.liveRoomShortcutPlayPause.value)) {
+      unawaited(liveRoomController.togglePlayPauseWithRefresh());
       return;
     }
     if (matches(settings.liveRoomShortcutToggleChat.value) &&
@@ -845,6 +902,12 @@ class MyApp extends StatelessWidget {
           return shortcut == LogicalKeyboardKey.keyB.keyId;
         case "keyN":
           return shortcut == LogicalKeyboardKey.keyN.keyId;
+        case "arrowUp":
+          return shortcut == LogicalKeyboardKey.arrowUp.keyId;
+        case "arrowDown":
+          return shortcut == LogicalKeyboardKey.arrowDown.keyId;
+        case "keySpace":
+          return shortcut == LogicalKeyboardKey.space.keyId;
         default:
           return false;
       }
@@ -862,8 +925,20 @@ class MyApp extends StatelessWidget {
       await liveRoomController.toggleMute();
       return;
     }
+    if (matchesDesktopShortcut(settings.liveRoomShortcutVolumeUp.value)) {
+      await liveRoomController.adjustDesktopPlayerVolume(5);
+      return;
+    }
+    if (matchesDesktopShortcut(settings.liveRoomShortcutVolumeDown.value)) {
+      await liveRoomController.adjustDesktopPlayerVolume(-5);
+      return;
+    }
     if (matchesDesktopShortcut(settings.liveRoomShortcutRefresh.value)) {
       liveRoomController.refreshRoom();
+      return;
+    }
+    if (matchesDesktopShortcut(settings.liveRoomShortcutPlayPause.value)) {
+      unawaited(liveRoomController.togglePlayPauseWithRefresh());
       return;
     }
     if (matchesDesktopShortcut(settings.liveRoomShortcutToggleChat.value)) {

@@ -467,17 +467,17 @@ class FollowUserItem extends StatelessWidget {
             border: _stateBorder(theme, idleAlpha: 24, idleWidth: 0.8),
             borderRadius: radius,
           ),
-          padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               NetImage(
                 item.face,
-                width: 72,
-                height: 72,
-                borderRadius: 36,
+                width: 64,
+                height: 64,
+                borderRadius: 32,
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 10),
               Text(
                 item.userName,
                 maxLines: 1,
@@ -487,7 +487,7 @@ class FollowUserItem extends StatelessWidget {
                   fontWeight: FontWeight.w600,
                 ),
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 6),
               Wrap(
                 alignment: WrapAlignment.center,
                 crossAxisAlignment: WrapCrossAlignment.center,
@@ -521,11 +521,16 @@ class FollowUserItem extends StatelessWidget {
                     ),
                 ],
               ),
-              const SizedBox(height: 10),
-              _buildActionArea(
-                context,
-                compact: true,
-                vertical: false,
+              const SizedBox(height: 8),
+              SizedBox(
+                height: 32,
+                child: Center(
+                  child: _buildActionArea(
+                    context,
+                    compact: true,
+                    vertical: false,
+                  ),
+                ),
               ),
             ],
           ),
@@ -571,6 +576,14 @@ class FollowUserItem extends StatelessWidget {
                     coverImage,
                     fit: BoxFit.cover,
                     borderRadius: radius,
+                    // Live covers can be large and change while the follow
+                    // list is polling. Decode them at preview size and keep
+                    // them in a bounded cache instead of the global cache.
+                    cacheWidth: 640,
+                    cacheHeight: 360,
+                    clearMemoryCacheWhenDispose: true,
+                    imageCacheName: NetImage.liveCoverCacheName,
+                    cacheMaxAge: const Duration(minutes: 10),
                   ),
           ),
       ],

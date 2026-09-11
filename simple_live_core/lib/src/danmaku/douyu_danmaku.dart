@@ -17,14 +17,13 @@ class DouyuDanmaku implements LiveDanmaku {
   Function(String msg)? onClose;
   @override
   Function()? onReady;
+  // 本地优先使用 8504 主端口；8501-8506 全部作为候选地址，由 WebScoketUtils 随机顺序连接
   String serverUrl = "wss://danmuproxy.douyu.com:8504";
 
-  // 备用弹幕服务器端口列表
-  final List<String> backupUrls = [
-    "wss://danmuproxy.douyu.com:8501",
-    "wss://danmuproxy.douyu.com:8503",
-    "wss://danmuproxy.douyu.com:8506",
-  ];
+  static List<String> get serverUrls => List<String>.generate(
+    6,
+    (index) => "wss://danmuproxy.douyu.com:${8501 + index}",
+  );
 
   WebScoketUtils? webScoketUtils;
 
@@ -32,8 +31,12 @@ class DouyuDanmaku implements LiveDanmaku {
   Future start(dynamic args) async {
     webScoketUtils = WebScoketUtils(
       url: serverUrl,
+      backupUrls: serverUrls.where((url) => url != serverUrl).toList(),
+      shuffleUrls: true,
+      maxConnectAttempts: 5,
+      connectTimeout: const Duration(seconds: 3),
+      reconnectDelay: const Duration(seconds: 5),
       heartBeatTime: heartbeatTime,
-      backupUrls: backupUrls,
       onMessage: (e) {
         decodeMessage(e);
       },
@@ -48,6 +51,7 @@ class DouyuDanmaku implements LiveDanmaku {
         onClose?.call("与服务器断开连接，正在尝试重连");
       },
       onClose: (e) {
+        CoreLog.w("[DouyuDanmaku] 弹幕连接失败：$e");
         onClose?.call("服务器连接失败$e");
       },
     );
@@ -55,10 +59,12 @@ class DouyuDanmaku implements LiveDanmaku {
   }
 
   void joinRoom(roomId) {
-    webScoketUtils
-        ?.sendMessage(serializeDouyu("type@=loginreq/roomid@=$roomId/"));
     webScoketUtils?.sendMessage(
-        serializeDouyu("type@=joingroup/rid@=$roomId/gid@=-9999/"));
+      serializeDouyu("type@=loginreq/roomid@=$roomId/"),
+    );
+    webScoketUtils?.sendMessage(
+      serializeDouyu("type@=joingroup/rid@=$roomId/gid@=-9999/"),
+    );
   }
 
   @override
@@ -130,8 +136,9 @@ class DouyuDanmaku implements LiveDanmaku {
   String? deserializeDouyu(List<int> buffer) {
     try {
       var reader = BinaryReader(Uint8List.fromList(buffer));
-      int fullMsgLength =
-          reader.readInt32(endian: Endian.little); //fullMsgLength
+      int fullMsgLength = reader.readInt32(
+        endian: Endian.little,
+      ); //fullMsgLength
       reader.readInt32(endian: Endian.little); //fullMsgLength2
       int bodyLength = fullMsgLength - 9;
       reader.readShort(endian: Endian.little); //packType

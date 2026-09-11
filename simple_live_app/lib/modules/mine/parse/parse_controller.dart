@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_smart_dialog/flutter_smart_dialog.dart';
 import 'package:get/get.dart';
-import 'package:simple_live_app/app/constant.dart';
 import 'package:simple_live_app/app/log.dart';
 import 'package:simple_live_app/app/sites.dart';
 import 'package:simple_live_app/routes/app_navigation.dart';
@@ -14,6 +13,9 @@ class ParseController extends GetxController {
       : _redirectClient = redirectClient ?? Dio();
 
   static const int _maxRedirects = 5;
+
+  /// 短链解析的最大递归次数，防止短链之间互相跳转导致无限递归。
+  static const int _maxParseDepth = 3;
   final Dio _redirectClient;
   final TextEditingController roomJumpToController = TextEditingController();
   final TextEditingController getUrlController = TextEditingController();
@@ -112,68 +114,46 @@ class ParseController extends GetxController {
     }
   }
 
-  Future<List> parse(String url) async {
-    var id = "";
+  Future<List> parse(String url, {int depth = 0}) async {
     final extractedUrl = extractHttpUrl(url);
     if (extractedUrl.isNotEmpty) {
       url = extractedUrl;
     }
-    if (url.contains("bilibili.com")) {
-      var regExp = RegExp(r"bilibili\.com/([\d|\w]+)");
-      id = regExp.firstMatch(url)?.group(1) ?? "";
-      return [id, Sites.allSites[Constant.kBiliBili]!];
+
+    final parsed = LiveUrlParser.parse(url);
+    if (parsed == null) {
+      return [];
     }
 
-    if (url.contains("b23.tv")) {
-      var btvReg = RegExp(r"https?:\/\/b23.tv\/[0-9a-z-A-Z]+");
-      var u = btvReg.firstMatch(url)?.group(0) ?? "";
-      var location = await getLocation(u);
-
-      return await parse(location);
-    }
-
-    if (url.contains("douyu.com")) {
-      var regExp = RegExp(r"douyu\.com/([\d|\w]+)");
-      // 适配 topic_url
-      if (url.contains("topic")) {
-        regExp = RegExp(r"[?&]rid=([\d]+)");
+    // 快手短链沿用原有流程，其重定向目标需通过受信域名校验。
+    if (parsed.isShortLink && parsed.siteId == LiveUrlParser.siteKuaishou) {
+      final roomId = await resolveKuaishouRoomId(url);
+      if (roomId.isEmpty) {
+        return [];
       }
-      id = regExp.firstMatch(url)?.group(1) ?? "";
-
-      return [id, Sites.allSites[Constant.kDouyu]!];
-    }
-    if (url.contains("huya.com")) {
-      var regExp = RegExp(r"huya\.com/([\d|\w]+)");
-      id = regExp.firstMatch(url)?.group(1) ?? "";
-
-      return [id, Sites.allSites[Constant.kHuya]!];
-    }
-    if (url.contains("live.douyin.com")) {
-      var regExp = RegExp(r"live\.douyin\.com/([\d|\w]+)");
-      id = regExp.firstMatch(url)?.group(1) ?? "";
-
-      return [id, Sites.allSites[Constant.kDouyin]!];
-    }
-    if (url.contains("webcast.amemv.com")) {
-      var regExp = RegExp(r"reflow/(\d+)");
-      id = regExp.firstMatch(url)?.group(1) ?? "";
-      return [id, Sites.allSites[Constant.kDouyin]!];
-    }
-    if (url.contains("v.douyin.com")) {
-      var regExp = RegExp(
-        r"https?://v\.douyin\.com/[\w-]+/?",
-        caseSensitive: false,
-      );
-      var u = regExp.firstMatch(url)?.group(0) ?? "";
-      var location = await getLocation(u);
-      return await parse(location);
-    }
-    final kuaishouRoomId = await resolveKuaishouRoomId(url);
-    if (kuaishouRoomId.isNotEmpty) {
-      return [kuaishouRoomId, Sites.allSites[Constant.kKuaishou]!];
+      return [roomId, Sites.allSites[LiveUrlParser.siteKuaishou]!];
     }
 
-    return [];
+    // 短链需要先跟随重定向，再对最终地址重新解析。
+    if (parsed.isShortLink) {
+      if (depth >= _maxParseDepth) {
+        return [];
+      }
+      final location = await getLocation(parsed.uri.toString());
+      if (location.isEmpty) {
+        return [];
+      }
+      return parse(location, depth: depth + 1);
+    }
+
+    if (parsed.roomId.isEmpty) {
+      return [];
+    }
+    final site = Sites.allSites[parsed.siteId];
+    if (site == null) {
+      return [];
+    }
+    return [parsed.roomId, site];
   }
 
   /// Resolves only known Kuaishou live-room links without account cookies.
@@ -277,17 +257,15 @@ class ParseController extends GetxController {
   }
 
   static String extractHttpUrl(String text) {
+    // 正则排除常见的中文标点符号作为URL边界
+    // 但不再进行二次清理，因为标点符号可能是用户名的合法部分
+    // 例如：Cc_2365. 或 user!!! 等
     return RegExp(
           r"https?://[^\s<>\u3000，。！？、；：]+",
           caseSensitive: false,
         )
             .firstMatch(text)
-            ?.group(0)
-            ?.replaceFirst(
-              RegExp(r"[，。！？、；：,.;:!?]+$"),
-              "",
-            )
-            .replaceFirst(RegExp(r'''[)\]}>'"）】》”’]+$'''), "") ??
+            ?.group(0) ??
         "";
   }
 }

@@ -80,19 +80,53 @@ class FollowService extends GetxService {
         loadData(updateStatus: false);
       });
     });
+    _initializeLiveNotificationBaselines();
+    if ((Platform.isAndroid || Platform.isIOS) &&
+        DBService.instance
+            .getFollowList()
+            .any((item) => item.isSpecialFollow)) {
+      // Ask while the app is available so background/queued refreshes can
+      // post a notification without waiting for the next room visit.
+      unawaited(LiveNotificationService.requestPermissionIfNeeded());
+    }
     initTimer();
     super.onInit();
   }
 
-  // 添加标签
-  Future<void> addFollowUserTag(String tag) async {
-    // 判断待添加tag是否已存在，存在则return
-    if (followTagList.any((item) => item.tag == tag)) {
-      SmartDialog.showToast("标签名重复，修改失败");
-      return;
+  void _initializeLiveNotificationBaselines() {
+    for (final item in DBService.instance.getFollowList()) {
+      if (!item.isSpecialFollow) {
+        continue;
+      }
+      _liveNotifyReadyIds.add(item.id);
+      if (item.liveStatus.value == 2) {
+        _liveNotifySentIds.add(item.id);
+      }
     }
-    FollowUserTag item = await DBService.instance.addFollowTag(tag);
+  }
+
+  // 添加标签
+  Future<bool> addFollowUserTag(String tag) async {
+    final String name = tag.trim();
+    if (name.isEmpty) {
+      SmartDialog.showToast("标签名不能为空");
+      return false;
+    }
+    // 判断待添加tag是否已存在，存在则return
+    if (followTagList.any((item) => item.tag == name)) {
+      SmartDialog.showToast("标签名重复，添加失败");
+      return false;
+    }
+    if (name.length > 8) {
+      SmartDialog.showToast("标签名长度不能超过8个字符");
+      return false;
+    }
+    FollowUserTag? item = await DBService.instance.addFollowTag(name);
+    if (item == null) {
+      return false;
+    }
     followTagList.add(item);
+    return true;
   }
 
   // 删除标签
@@ -334,7 +368,6 @@ class FollowService extends GetxService {
   Future<void> startUpdateStatus({bool force = false}) async {
     return refreshSelectedStatus(
       followList,
-      includeAllNormals: true,
       force: force,
       scope: FollowRefreshScope.all(automatic: !force),
       allowDetailRefresh: force,
@@ -560,14 +593,12 @@ class FollowService extends GetxService {
     return result;
   }
 
-  List<FollowUser> _buildRefreshTargets(
-    Iterable<FollowUser> normalTargets, {
-    bool includeAllNormals = false,
-  }) {
-    final specials = followList.where((item) => item.isSpecialFollow).toList();
-    final normals = includeAllNormals
-        ? followList.where((item) => !item.isSpecialFollow).toList()
-        : normalTargets.where((item) => !item.isSpecialFollow).toList();
+  List<FollowUser> _buildRefreshTargets(Iterable<FollowUser> normalTargets) {
+    final boundedTargets = _distinctFollowUsers(normalTargets);
+    final specials =
+        boundedTargets.where((item) => item.isSpecialFollow).toList();
+    final normals =
+        boundedTargets.where((item) => !item.isSpecialFollow).toList();
     return _distinctFollowUsers([
       ...sortFollowUsers(specials),
       ...sortFollowUsers(normals),
@@ -943,7 +974,6 @@ class FollowService extends GetxService {
 
   Future<void> refreshSelectedStatus(
     Iterable<FollowUser> normalTargets, {
-    bool includeAllNormals = false,
     bool force = true,
     FollowRefreshScope? scope,
     bool allowDetailRefresh = true,
@@ -953,10 +983,7 @@ class FollowService extends GetxService {
           automatic: !force,
         );
     final targets = resolvedScope.includeAllNormals
-        ? _buildRefreshTargets(
-            normalTargets,
-            includeAllNormals: includeAllNormals,
-          )
+        ? _buildRefreshTargets(normalTargets)
         : buildPageFrontTargets(normalTargets);
     await _refreshStatusTargets(
       targets,

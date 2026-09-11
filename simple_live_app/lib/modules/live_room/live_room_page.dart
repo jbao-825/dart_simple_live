@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:canvas_danmaku/canvas_danmaku.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_smart_dialog/flutter_smart_dialog.dart';
@@ -335,7 +336,59 @@ class LiveRoomPage extends GetView<LiveRoomController> {
   Widget _buildPipOnlyPage() {
     return ColoredBox(
       color: Colors.black,
-      child: _buildMediaPlayerContent(pipMode: true),
+      child: Stack(
+        children: [
+          _buildMediaPlayerContent(pipMode: true),
+          // 添加 PIP 弹幕支持
+          if (AppSettingsController.instance.enablePipDanmu.value)
+            _buildPipDanmuLayer(),
+        ],
+      ),
+    );
+  }
+
+  /// PIP 模式下的安全弹幕层
+  Widget _buildPipDanmuLayer() {
+    return Positioned.fill(
+      child: Padding(
+        padding: const EdgeInsets.all(8), // 边距确保不触边
+        child: Obx(() {
+          return Offstage(
+            offstage: !controller.showDanmakuState.value,
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final settings = AppSettingsController.instance;
+
+                // PIP 模式使用固定的小字号和限制区域
+                final fontSize =
+                    settings.danmuSize.value * settings.pipDanmuScale.value;
+                const area = 0.4; // 限制40%区域
+                const opacity = 0.75; // 稍微透明
+
+                return DanmakuScreen(
+                  key: controller.globalDanmuKey,
+                  createdController: controller.initDanmakuController,
+                  option: DanmakuOption(
+                    fontSize: fontSize,
+                    fontFamily: Platform.isWindows
+                        ? "Microsoft YaHei"
+                        : (Platform.isAndroid ? "Roboto" : null),
+                    area: area,
+                    lineHeight: 1.2,
+                    duration: settings.danmuSpeed.value.toInt(),
+                    opacity: opacity,
+                    fontWeight: settings.danmuFontWeight.value,
+                    hideTop: true, // PIP模式只显示滚动弹幕
+                    hideBottom: true,
+                    hideScroll: false,
+                    hideSpecial: true,
+                  ),
+                );
+              },
+            ),
+          );
+        }),
+      ),
     );
   }
 
@@ -514,6 +567,15 @@ class LiveRoomPage extends GetView<LiveRoomController> {
                             icon: const Icon(Remix.heart_line),
                             label: const Text("关注"),
                           ),
+                  ),
+                  AppStyle.hGap4,
+                  TextButton.icon(
+                    style: TextButton.styleFrom(
+                      textStyle: const TextStyle(fontSize: 14),
+                    ),
+                    onPressed: controller.showCurrentFollowTagSheet,
+                    icon: const Icon(Remix.price_tag_3_line),
+                    label: const Text("标签"),
                   ),
                   const Expanded(child: Center()),
                   TextButton.icon(
@@ -860,6 +922,16 @@ class LiveRoomPage extends GetView<LiveRoomController> {
                       icon: const Icon(Remix.heart_line),
                       label: const Text("关注"),
                     ),
+            ),
+          ),
+          Expanded(
+            child: TextButton.icon(
+              style: TextButton.styleFrom(
+                textStyle: const TextStyle(fontSize: 14),
+              ),
+              onPressed: controller.showCurrentFollowTagSheet,
+              icon: const Icon(Remix.price_tag_3_line),
+              label: const Text("标签"),
             ),
           ),
           Expanded(

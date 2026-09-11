@@ -40,14 +40,26 @@ class PlaySettingsPage extends GetView<AppSettingsController> {
               children: [
                 Obx(
                   () => SettingsSwitch(
-                    title: "硬件解码",
+                    title: Platform.isIOS ? "硬件加速" : "硬件解码",
                     value: controller.hardwareDecode.value,
-                    subtitle: "播放失败可尝试关闭此选项",
+                    subtitle: Platform.isIOS
+                        ? "建议保持开启；关闭后更耗电，仅在排查黑屏时临时使用"
+                        : "播放失败可尝试关闭此选项",
                     onChanged: (e) {
                       controller.setHardwareDecode(e);
                     },
                   ),
                 ),
+                if (Platform.isIOS) AppStyle.divider,
+                if (Platform.isIOS)
+                  Obx(
+                    () => SettingsSwitch(
+                      title: "原画省电优化",
+                      subtitle: "限制渲染纹理不超过屏幕实际像素，不降低直播源清晰度；异常时可关闭",
+                      value: controller.iosOriginalQualityPowerSaving.value,
+                      onChanged: controller.setIosOriginalQualityPowerSaving,
+                    ),
+                  ),
                 if (Platform.isAndroid) AppStyle.divider,
                 Obx(
                   () => Visibility(
@@ -394,6 +406,119 @@ class PlaySettingsPage extends GetView<AppSettingsController> {
           Padding(
             padding: AppStyle.edgeInsetsA12.copyWith(top: 24),
             child: Text(
+              "弹幕显示优化",
+              style: Get.textTheme.titleSmall,
+            ),
+          ),
+          SettingsCard(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // 小窗弹幕设置（桌面端）
+                if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) ...[
+                  Padding(
+                    padding: AppStyle.edgeInsetsA12,
+                    child: Text(
+                      "小窗弹幕",
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: Get.theme.primaryColor,
+                      ),
+                    ),
+                  ),
+                  Obx(
+                    () => SettingsNumber(
+                      title: "小窗字体缩放",
+                      subtitle: "相对于正常播放时的弹幕大小",
+                      value: (controller.smallWindowDanmuScale.value * 10).round(),
+                      min: 5,
+                      max: 10,
+                      step: 1,
+                      unit: "",
+                      displayValue: "${(controller.smallWindowDanmuScale.value * 10).round() / 10}x",
+                      onChanged: (v) => controller.setSmallWindowDanmuScale(v / 10),
+                    ),
+                  ),
+                  AppStyle.divider,
+                  Obx(
+                    () => SettingsNumber(
+                      title: "小窗最大行数",
+                      subtitle: "限制小窗时的弹幕行数，避免遮挡画面",
+                      value: controller.smallWindowDanmuMaxLines.value,
+                      min: 3,
+                      max: 10,
+                      step: 1,
+                      unit: "行",
+                      onChanged: controller.setSmallWindowDanmuMaxLines,
+                    ),
+                  ),
+                  AppStyle.divider,
+                  Obx(
+                    () => SettingsSwitch(
+                      title: "小窗自动透明",
+                      subtitle: "小窗时自动降低弹幕透明度（70%）",
+                      value: controller.smallWindowDanmuAutoTransparent.value,
+                      onChanged: controller.setSmallWindowDanmuAutoTransparent,
+                    ),
+                  ),
+                ],
+                // PIP弹幕设置（Android）
+                if (Platform.isAndroid) ...[
+                  if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) AppStyle.divider,
+                  Padding(
+                    padding: AppStyle.edgeInsetsA12,
+                    child: Text(
+                      "PIP 弹幕（画中画）",
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: Get.theme.primaryColor,
+                      ),
+                    ),
+                  ),
+                  Obx(
+                    () => SettingsSwitch(
+                      title: "PIP 显示弹幕",
+                      subtitle: "画中画模式下显示弹幕（仅滚动弹幕，限制区域）",
+                      value: controller.enablePipDanmu.value,
+                      onChanged: controller.setEnablePipDanmu,
+                    ),
+                  ),
+                  AppStyle.divider,
+                  Obx(
+                    () => SettingsNumber(
+                      title: "PIP 字体缩放",
+                      subtitle: "相对于正常播放时的弹幕大小",
+                      value: (controller.pipDanmuScale.value * 20).round(),
+                      min: 10,
+                      max: 20,
+                      step: 1,
+                      unit: "",
+                      displayValue: "${(controller.pipDanmuScale.value * 20).round() / 20}x",
+                      onChanged: (v) => controller.setPipDanmuScale(v / 20),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          // SuperChat 全屏滚动
+          SettingsCard(
+            child: Column(
+              children: [
+                Obx(
+                  () => SettingsSwitch(
+                    title: "SC 全屏滚动",
+                    subtitle: "SuperChat 在全屏时作为弹幕滚动显示，格式：【头条】用户名：内容",
+                    value: controller.superChatScrollInFullscreen.value,
+                    onChanged: controller.setSuperChatScrollInFullscreen,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: AppStyle.edgeInsetsA12.copyWith(top: 24),
+            child: Text(
               "清晰度",
               style: Get.textTheme.titleSmall,
             ),
@@ -409,6 +534,7 @@ class PlaySettingsPage extends GetView<AppSettingsController> {
                       0: "最低",
                       1: "中等",
                       2: "最高",
+                      3: "记住上次",
                     },
                     onChanged: (e) {
                       controller.setQualityLevel(e);
@@ -424,6 +550,7 @@ class PlaySettingsPage extends GetView<AppSettingsController> {
                       0: "最低",
                       1: "中等",
                       2: "最高",
+                      3: "记住上次",
                     },
                     onChanged: (e) {
                       controller.setQualityLevelCellular(e);

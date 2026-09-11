@@ -1,14 +1,20 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
 import 'package:simple_live_app/app/constant.dart';
+import 'package:simple_live_app/app/desktop_startup_args.dart';
 import 'package:simple_live_app/app/log.dart';
 import 'package:simple_live_app/app/sites.dart';
 import 'package:simple_live_app/models/danmu_shield_preset.dart';
 import 'package:simple_live_app/services/background_playback_service.dart';
 import 'package:simple_live_app/services/local_storage_service.dart';
+import 'package:simple_live_core/simple_live_core.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_smart_dialog/flutter_smart_dialog.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 
@@ -60,6 +66,9 @@ class AppSettingsController extends GetxController {
     LogicalKeyboardKey.keyG.keyId: "G",
     LogicalKeyboardKey.keyB.keyId: "B",
     LogicalKeyboardKey.keyN.keyId: "N",
+    LogicalKeyboardKey.arrowUp.keyId: "上方向键",
+    LogicalKeyboardKey.arrowDown.keyId: "下方向键",
+    LogicalKeyboardKey.space.keyId: "空格",
   };
 
   /// 缩放模式
@@ -115,6 +124,10 @@ class AppSettingsController extends GetxController {
 
     hardwareDecode.value = LocalStorageService.instance
         .getValue(LocalStorageService.kHardwareDecode, true);
+    iosOriginalQualityPowerSaving.value = LocalStorageService.instance.getValue(
+      LocalStorageService.kIosOriginalQualityPowerSaving,
+      true,
+    );
     chatTextSize.value = LocalStorageService.instance
         .getValue(LocalStorageService.kChatTextSize, 14.0);
 
@@ -170,6 +183,22 @@ class AppSettingsController extends GetxController {
         .getValue(LocalStorageService.kAutoPipOnExit, false);
     playershowSuperChat.value = LocalStorageService.instance
         .getValue(LocalStorageService.kPlayerShowSuperChat, false);
+
+    // 加载小窗弹幕设置
+    smallWindowDanmuScale.value = LocalStorageService.instance
+        .getValue(LocalStorageService.kSmallWindowDanmuScale, 0.8);
+    smallWindowDanmuMaxLines.value = LocalStorageService.instance
+        .getValue(LocalStorageService.kSmallWindowDanmuMaxLines, 5);
+    smallWindowDanmuAutoTransparent.value = LocalStorageService.instance
+        .getValue(LocalStorageService.kSmallWindowDanmuAutoTransparent, true);
+
+    // 加载PIP弹幕设置
+    enablePipDanmu.value = LocalStorageService.instance
+        .getValue(LocalStorageService.kEnablePipDanmu, false);
+    pipDanmuScale.value = LocalStorageService.instance
+        .getValue(LocalStorageService.kPipDanmuScale, 0.75);
+    superChatScrollInFullscreen.value = LocalStorageService.instance
+        .getValue(LocalStorageService.kSuperChatScrollInFullscreen, false);
     liveEventFlowEnable.value = LocalStorageService.instance.getValue(
       LocalStorageService.kLiveEventFlowEnable,
       false,
@@ -328,6 +357,15 @@ class AppSettingsController extends GetxController {
       LocalStorageService.kVideoHardwareDecoder,
       Platform.isAndroid ? "auto-safe" : "auto",
     );
+    windowsGpuPreference.value = _normalizeWindowsGpuPreference(
+      LocalStorageService.instance.getValue(
+        LocalStorageService.kWindowsGpuPreference,
+        "auto",
+      ),
+    );
+    if (Platform.isWindows) {
+      unawaited(_writeWindowsGpuPreferenceFile(windowsGpuPreference.value));
+    }
 
     autoUpdateFollowEnable.value = LocalStorageService.instance
         .getValue(LocalStorageService.kAutoUpdateFollowEnable, true);
@@ -539,6 +577,24 @@ class AppSettingsController extends GetxController {
         LogicalKeyboardKey.keyC.keyId,
       ),
     );
+    liveRoomShortcutVolumeUp.value = _normalizeLiveRoomShortcut(
+      LocalStorageService.instance.getValue(
+        LocalStorageService.kLiveRoomShortcutVolumeUp,
+        LogicalKeyboardKey.arrowUp.keyId,
+      ),
+    );
+    liveRoomShortcutVolumeDown.value = _normalizeLiveRoomShortcut(
+      LocalStorageService.instance.getValue(
+        LocalStorageService.kLiveRoomShortcutVolumeDown,
+        LogicalKeyboardKey.arrowDown.keyId,
+      ),
+    );
+    liveRoomShortcutPlayPause.value = _normalizeLiveRoomShortcut(
+      LocalStorageService.instance.getValue(
+        LocalStorageService.kLiveRoomShortcutPlayPause,
+        LogicalKeyboardKey.space.keyId,
+      ),
+    );
   }
 
   void setNoFirstRun() {
@@ -587,6 +643,15 @@ class AppSettingsController extends GetxController {
     hardwareDecode.value = e;
     LocalStorageService.instance
         .setValue(LocalStorageService.kHardwareDecode, e);
+  }
+
+  var iosOriginalQualityPowerSaving = true.obs;
+  void setIosOriginalQualityPowerSaving(bool e) {
+    iosOriginalQualityPowerSaving.value = e;
+    LocalStorageService.instance.setValue(
+      LocalStorageService.kIosOriginalQualityPowerSaving,
+      e,
+    );
   }
 
   var chatTextSize = 14.0.obs;
@@ -714,7 +779,9 @@ class AppSettingsController extends GetxController {
         style: TextStyle(
           fontSize: fontSize ?? danmuSize.value,
           fontWeight: fontWeight ?? _danmuFontWeightValue,
-          fontFamily: Platform.isWindows ? "Microsoft YaHei" : null,
+          fontFamily: Platform.isWindows
+              ? "Microsoft YaHei"
+              : (Platform.isAndroid ? "Roboto" : null),
           foreground: Paint()
             ..style = PaintingStyle.stroke
             ..strokeWidth = strokeWidth ?? danmuStrokeWidth.value
@@ -910,6 +977,42 @@ class AppSettingsController extends GetxController {
         .setValue(LocalStorageService.kQualityLevelCellular, level);
   }
 
+  /// 保存某平台的清晰度记忆（名称 + 距最高档偏移）。
+  void saveQualityMemory({
+    required String siteId,
+    required String qualityName,
+    required int offsetFromTop,
+  }) {
+    if (siteId.isEmpty || qualityName.isEmpty || offsetFromTop < 0) {
+      return;
+    }
+    final rawMap = LocalStorageService.instance.getValue(
+      LocalStorageService.kQualityMemory,
+      <String, dynamic>{},
+    );
+    // Hive 反序列化可能返回非指定泛型的 Map，重新收敛类型
+    final map = Map<String, dynamic>.from(rawMap as Map);
+    map[siteId] = QualityMemory.encodeEntry(
+      qualityName: qualityName,
+      offsetFromTop: offsetFromTop,
+    );
+    LocalStorageService.instance
+        .setValue(LocalStorageService.kQualityMemory, map);
+  }
+
+  /// 读取某平台的清晰度记忆，不存在返回 null。
+  ({String name, int offset})? getQualityMemory(String siteId) {
+    if (siteId.isEmpty) {
+      return null;
+    }
+    final rawMap = LocalStorageService.instance.getValue(
+      LocalStorageService.kQualityMemory,
+      <String, dynamic>{},
+    );
+    // decodeEntry 自身会校验非 Map 输入并返回 null，无需在此重复判断类型
+    return QualityMemory.decodeEntry(rawMap[siteId]);
+  }
+
   var autoExitEnable = false.obs;
   void setAutoExitEnable(bool e) {
     autoExitEnable.value = e;
@@ -1018,6 +1121,51 @@ class AppSettingsController extends GetxController {
     playershowSuperChat.value = e;
     LocalStorageService.instance
         .setValue(LocalStorageService.kPlayerShowSuperChat, e);
+  }
+
+  // 小窗弹幕设置
+  var smallWindowDanmuScale = 0.8.obs;
+  void setSmallWindowDanmuScale(double e) {
+    smallWindowDanmuScale.value = e;
+    LocalStorageService.instance
+        .setValue(LocalStorageService.kSmallWindowDanmuScale, e);
+  }
+
+  var smallWindowDanmuMaxLines = 5.obs;
+  void setSmallWindowDanmuMaxLines(int e) {
+    smallWindowDanmuMaxLines.value = e;
+    LocalStorageService.instance
+        .setValue(LocalStorageService.kSmallWindowDanmuMaxLines, e);
+  }
+
+  var smallWindowDanmuAutoTransparent = true.obs;
+  void setSmallWindowDanmuAutoTransparent(bool e) {
+    smallWindowDanmuAutoTransparent.value = e;
+    LocalStorageService.instance
+        .setValue(LocalStorageService.kSmallWindowDanmuAutoTransparent, e);
+  }
+
+  // PIP弹幕设置
+  var enablePipDanmu = false.obs;
+  void setEnablePipDanmu(bool e) {
+    enablePipDanmu.value = e;
+    LocalStorageService.instance
+        .setValue(LocalStorageService.kEnablePipDanmu, e);
+  }
+
+  var pipDanmuScale = 0.75.obs;
+  void setPipDanmuScale(double e) {
+    pipDanmuScale.value = e;
+    LocalStorageService.instance
+        .setValue(LocalStorageService.kPipDanmuScale, e);
+  }
+
+  // SuperChat 全屏滚动
+  var superChatScrollInFullscreen = false.obs;
+  void setSuperChatScrollInFullscreen(bool e) {
+    superChatScrollInFullscreen.value = e;
+    LocalStorageService.instance
+        .setValue(LocalStorageService.kSuperChatScrollInFullscreen, e);
   }
 
   var danmuShieldEnable = true.obs;
@@ -1914,53 +2062,104 @@ class AppSettingsController extends GetxController {
         : kShortcutDisabled;
   }
 
+  Map<RxInt, String> get _liveRoomShortcutAssignments => {
+        liveRoomShortcutFullScreen: "切换全屏",
+        liveRoomShortcutDanmaku: "显示/隐藏弹幕",
+        liveRoomShortcutMute: "静音/取消静音",
+        liveRoomShortcutRefresh: "刷新直播间",
+        liveRoomShortcutToggleChat: "收起/展开聊天区",
+        liveRoomShortcutVolumeUp: "调高音量",
+        liveRoomShortcutVolumeDown: "调低音量",
+        liveRoomShortcutPlayPause: "暂停/继续",
+      };
+
+  void _setLiveRoomShortcut({
+    required int value,
+    required RxInt target,
+    required String storageKey,
+  }) {
+    final normalized = _normalizeLiveRoomShortcut(value);
+    if (normalized != kShortcutDisabled) {
+      for (final entry in _liveRoomShortcutAssignments.entries) {
+        if (entry.key != target && entry.key.value == normalized) {
+          SmartDialog.showToast("该按键已用于${entry.value}");
+          return;
+        }
+      }
+    }
+    target.value = normalized;
+    LocalStorageService.instance.setValue(storageKey, normalized);
+  }
+
   var liveRoomShortcutFullScreen = LogicalKeyboardKey.keyF.keyId.obs;
   void setLiveRoomShortcutFullScreen(int value) {
-    final normalized = _normalizeLiveRoomShortcut(value);
-    liveRoomShortcutFullScreen.value = normalized;
-    LocalStorageService.instance.setValue(
-      LocalStorageService.kLiveRoomShortcutFullScreen,
-      normalized,
+    _setLiveRoomShortcut(
+      value: value,
+      target: liveRoomShortcutFullScreen,
+      storageKey: LocalStorageService.kLiveRoomShortcutFullScreen,
     );
   }
 
   var liveRoomShortcutDanmaku = LogicalKeyboardKey.keyD.keyId.obs;
   void setLiveRoomShortcutDanmaku(int value) {
-    final normalized = _normalizeLiveRoomShortcut(value);
-    liveRoomShortcutDanmaku.value = normalized;
-    LocalStorageService.instance.setValue(
-      LocalStorageService.kLiveRoomShortcutDanmaku,
-      normalized,
+    _setLiveRoomShortcut(
+      value: value,
+      target: liveRoomShortcutDanmaku,
+      storageKey: LocalStorageService.kLiveRoomShortcutDanmaku,
     );
   }
 
   var liveRoomShortcutMute = LogicalKeyboardKey.keyM.keyId.obs;
   void setLiveRoomShortcutMute(int value) {
-    final normalized = _normalizeLiveRoomShortcut(value);
-    liveRoomShortcutMute.value = normalized;
-    LocalStorageService.instance.setValue(
-      LocalStorageService.kLiveRoomShortcutMute,
-      normalized,
+    _setLiveRoomShortcut(
+      value: value,
+      target: liveRoomShortcutMute,
+      storageKey: LocalStorageService.kLiveRoomShortcutMute,
     );
   }
 
   var liveRoomShortcutRefresh = LogicalKeyboardKey.keyR.keyId.obs;
   void setLiveRoomShortcutRefresh(int value) {
-    final normalized = _normalizeLiveRoomShortcut(value);
-    liveRoomShortcutRefresh.value = normalized;
-    LocalStorageService.instance.setValue(
-      LocalStorageService.kLiveRoomShortcutRefresh,
-      normalized,
+    _setLiveRoomShortcut(
+      value: value,
+      target: liveRoomShortcutRefresh,
+      storageKey: LocalStorageService.kLiveRoomShortcutRefresh,
     );
   }
 
   var liveRoomShortcutToggleChat = LogicalKeyboardKey.keyC.keyId.obs;
   void setLiveRoomShortcutToggleChat(int value) {
-    final normalized = _normalizeLiveRoomShortcut(value);
-    liveRoomShortcutToggleChat.value = normalized;
-    LocalStorageService.instance.setValue(
-      LocalStorageService.kLiveRoomShortcutToggleChat,
-      normalized,
+    _setLiveRoomShortcut(
+      value: value,
+      target: liveRoomShortcutToggleChat,
+      storageKey: LocalStorageService.kLiveRoomShortcutToggleChat,
+    );
+  }
+
+  var liveRoomShortcutVolumeUp = LogicalKeyboardKey.arrowUp.keyId.obs;
+  void setLiveRoomShortcutVolumeUp(int value) {
+    _setLiveRoomShortcut(
+      value: value,
+      target: liveRoomShortcutVolumeUp,
+      storageKey: LocalStorageService.kLiveRoomShortcutVolumeUp,
+    );
+  }
+
+  var liveRoomShortcutVolumeDown = LogicalKeyboardKey.arrowDown.keyId.obs;
+  void setLiveRoomShortcutVolumeDown(int value) {
+    _setLiveRoomShortcut(
+      value: value,
+      target: liveRoomShortcutVolumeDown,
+      storageKey: LocalStorageService.kLiveRoomShortcutVolumeDown,
+    );
+  }
+
+  var liveRoomShortcutPlayPause = LogicalKeyboardKey.space.keyId.obs;
+  void setLiveRoomShortcutPlayPause(int value) {
+    _setLiveRoomShortcut(
+      value: value,
+      target: liveRoomShortcutPlayPause,
+      storageKey: LocalStorageService.kLiveRoomShortcutPlayPause,
     );
   }
 
@@ -2111,7 +2310,7 @@ class AppSettingsController extends GetxController {
       if (left == null || top == null || width == null || height == null) {
         return null;
       }
-      if (width < 280 || height < 280) {
+      if (!DesktopStartupArgs.isValidWindowSize(width, height)) {
         return null;
       }
       return Rect.fromLTWH(left, top, width, height);
@@ -2440,6 +2639,47 @@ class AppSettingsController extends GetxController {
     videoHardwareDecoder.value = e;
     LocalStorageService.instance
         .setValue(LocalStorageService.kVideoHardwareDecoder, e);
+  }
+
+  static const windowsGpuPreferenceOptions = <String, String>{
+    "auto": "自动（由系统选择）",
+    "low_power": "省电/核显",
+    "high_performance": "高性能/NVIDIA 独显",
+  };
+
+  var windowsGpuPreference = "auto".obs;
+
+  String _normalizeWindowsGpuPreference(dynamic value) {
+    final normalized = value.toString().trim().toLowerCase();
+    return windowsGpuPreferenceOptions.containsKey(normalized)
+        ? normalized
+        : "auto";
+  }
+
+  void setWindowsGpuPreference(String value) {
+    final normalized = _normalizeWindowsGpuPreference(value);
+    windowsGpuPreference.value = normalized;
+    LocalStorageService.instance.setValue(
+      LocalStorageService.kWindowsGpuPreference,
+      normalized,
+    );
+    if (Platform.isWindows) {
+      unawaited(_writeWindowsGpuPreferenceFile(normalized));
+    }
+  }
+
+  Future<void> _writeWindowsGpuPreferenceFile(String value) async {
+    try {
+      final supportDirectory = await getApplicationSupportDirectory();
+      final file = File(p.join(supportDirectory.path, "gpu_preference.txt"));
+      await file.writeAsString(
+        '$value\n',
+        encoding: utf8,
+        flush: true,
+      );
+    } catch (e, stackTrace) {
+      Log.e("保存 Windows GPU 偏好失败: $e", stackTrace);
+    }
   }
 
   var mpvProfile = "balanced".obs;

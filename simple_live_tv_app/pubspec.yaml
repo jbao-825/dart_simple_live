@@ -1,7 +1,7 @@
 name: simple_live_tv_app
 description: A new Flutter project.
 publish_to: "none"
-version: 1.7.8+10708
+version: 1.8.1+10801
 
 environment:
   sdk: ">=3.1.2 <4.0.0"
@@ -23,6 +23,7 @@ dependencies:
   intl: ^0.20.2 #国际化
   flutter_screenutil: ^5.9.3 #UI适配
   uuid: ^4.5.1 #UUID
+  collection: ^1.19.0 #集合工具（firstWhereOrNull等）
   web_socket_channel: ^3.0.1 #远程同步WebSocket
   crypto: ^3.0.6
   webdav_client: ^1.2.2 # WebDAV
@@ -63,6 +64,8 @@ dependency_overrides:
   canvas_danmaku:
     path: ../third_party/canvas_danmaku
   media_kit_libs_android_video: 1.3.7
+  media_kit_libs_windows_video:
+    path: ../third_party/media_kit_libs_windows_video
 
 dev_dependencies:
   flutter_test:
@@ -76,5 +79,6 @@ flutter:
     - assets/statement.txt
     - assets/images/
     - assets/images/douyin_emoji/
+    - assets/images/douyin_games/
     - assets/icons/
     - assets/lotties/
