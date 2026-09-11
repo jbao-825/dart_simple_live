@@ -549,17 +549,6 @@ Widget _buildFullBottomBar(
                 color: Colors.white,
               ),
             ),
-            Obx(
-              () => IconButton(
-                onPressed: controller.togglePlayPauseWithRefresh,
-                icon: Icon(
-                  controller.playingState.value
-                      ? Icons.pause
-                      : Icons.play_arrow,
-                  color: Colors.white,
-                ),
-              ),
-            ),
             IconButton(
               onPressed: () {
                 controller.setDanmakuVisible(!showDanmaku);
@@ -611,16 +600,17 @@ Widget _buildFullBottomBar(
                   color: Colors.white,
                 ),
               ),
-            IconButton(
-              onPressed: controller.toggleMute,
-              icon: Icon(
-                controller.mutedState.value
-                    ? Icons.volume_off
-                    : Icons.volume_up,
-                size: 24,
-                color: Colors.white,
+            if (Platform.isAndroid || Platform.isIOS)
+              IconButton(
+                onPressed: controller.toggleMute,
+                icon: Icon(
+                  controller.mutedState.value
+                      ? Icons.volume_off
+                      : Icons.volume_up,
+                  size: 24,
+                  color: Colors.white,
+                ),
               ),
-            ),
             TextButton(
               onPressed: () => showQualitesInfo(controller),
               child: Text(
@@ -756,17 +746,6 @@ Widget _buildNormalBottomBar(
                 color: Colors.white,
               ),
             ),
-            Obx(
-              () => IconButton(
-                onPressed: controller.togglePlayPauseWithRefresh,
-                icon: Icon(
-                  controller.playingState.value
-                      ? Icons.pause
-                      : Icons.play_arrow,
-                  color: Colors.white,
-                ),
-              ),
-            ),
             IconButton(
               onPressed: () {
                 controller.setDanmakuVisible(!showDanmaku);
@@ -818,16 +797,17 @@ Widget _buildNormalBottomBar(
                   color: Colors.white,
                 ),
               ),
-            IconButton(
-              onPressed: controller.toggleMute,
-              icon: Icon(
-                controller.mutedState.value
-                    ? Icons.volume_off
-                    : Icons.volume_up,
-                size: 24,
-                color: Colors.white,
+            if (Platform.isAndroid || Platform.isIOS)
+              IconButton(
+                onPressed: controller.toggleMute,
+                icon: Icon(
+                  controller.mutedState.value
+                      ? Icons.volume_off
+                      : Icons.volume_up,
+                  size: 24,
+                  color: Colors.white,
+                ),
               ),
-            ),
             if (!isPortrait)
               TextButton(
                 onPressed: () => showQualitesInfo(controller),
